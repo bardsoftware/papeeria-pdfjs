@@ -1,5 +1,5 @@
 ({
     baseUrl: ".",
-    name: "PdfJsViewer",
+    name: "workspace/viewer/PdfJsViewer",
     out: "pdfjs-demo-build.js"
 })

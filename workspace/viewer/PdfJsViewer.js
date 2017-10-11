@@ -286,6 +286,7 @@ define(["require", "exports", "pdf.combined", "pdfjs-web/pdf_page_view", "pdfjs-
         };
         PdfJsViewer.prototype.show = function (url, page, isResize, mainFileId) {
             if (isResize === void 0) { isResize = false; }
+            this.logger.error("Showing document " + url + " at page " + page);
             var isEmpty = this.queue.isEmpty();
             this.queue.push(url, page, isResize, mainFileId);
             if (isEmpty) {

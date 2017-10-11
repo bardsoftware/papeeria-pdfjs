@@ -355,6 +355,7 @@ export class PdfJsViewer {
   // Schedules a new page open task. If queue is empty, the task is executed immediately, otherwise it is
   // added to the queue and waits until the current task completes.
   public show(url: string, page: number, isResize: boolean = false, mainFileId?: string) {
+    this.logger.error(`Showing document ${url} at page ${page}`);
     const isEmpty = this.queue.isEmpty();
     this.queue.push(url, page, isResize, mainFileId);
     if (isEmpty) {

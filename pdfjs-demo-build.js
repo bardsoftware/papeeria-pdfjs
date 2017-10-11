@@ -51741,7 +51741,7 @@ exports.TextLayerBuilder = TextLayerBuilder;
 exports.DefaultTextLayerFactory = DefaultTextLayerFactory;
 }));
 
-define('PdfJsViewer',["require", "exports", "pdf.combined", "pdfjs-web/pdf_page_view", "pdfjs-web/text_layer_builder", "pdfjs-web/ui_utils"], function (require, exports, pdfjs, PDFPageView, TextLayerBuilder, PdfJsUtils) {
+define('workspace/viewer/PdfJsViewer',["require", "exports", "pdf.combined", "pdfjs-web/pdf_page_view", "pdfjs-web/text_layer_builder", "pdfjs-web/ui_utils"], function (require, exports, pdfjs, PDFPageView, TextLayerBuilder, PdfJsUtils) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var pdfjs, PDFPageView, TextLayerBuilder, PdfJsUtils;
@@ -52029,6 +52029,7 @@ define('PdfJsViewer',["require", "exports", "pdf.combined", "pdfjs-web/pdf_page_
         };
         PdfJsViewer.prototype.show = function (url, page, isResize, mainFileId) {
             if (isResize === void 0) { isResize = false; }
+            this.logger.error("Showing document " + url + " at page " + page);
             var isEmpty = this.queue.isEmpty();
             this.queue.push(url, page, isResize, mainFileId);
             if (isEmpty) {

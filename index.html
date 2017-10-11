@@ -14,9 +14,9 @@
     }
   </style>
   <script type="text/javascript">
-    require(["PdfJsViewer"], function(PdfJsViewerModule) {
-      logger = { error: function(msg) { console.log(msg); }}
-      alert = { show: function(msg) { alert(msg); }}
+    require(["workspace/viewer/PdfJsViewer"], function(PdfJsViewerModule) {
+      loggerImpl = { error: function(msg) { console.log(msg); }}
+      alertImpl = { show: function(msg) { window.alert(msg); }}
       utils = { stopEvent: function(e) {
         if (e) {
           e.preventDefault();
@@ -25,7 +25,7 @@
         }        
       }}
       i18n = { text: function(key) { return key; }}
-      viewer = new PdfJsViewerModule.PdfJsViewer($("#viewer"), alert, logger, utils, i18n);
+      viewer = new PdfJsViewerModule.PdfJsViewer($("#viewer"), alertImpl, loggerImpl, utils, i18n);
       viewer.show('/diploma.pdf', 1);
     });
   </script>
