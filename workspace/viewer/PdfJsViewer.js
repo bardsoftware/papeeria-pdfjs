@@ -1,7 +1,9 @@
-define(["require", "exports", "pdf.combined", "pdfjs-web/pdf_page_view", "pdfjs-web/text_layer_builder", "pdfjs-web/ui_utils"], function (require, exports, pdfjs, PDFPageView, TextLayerBuilder, PdfJsUtils) {
+define(["require", "exports", "pdf.combined", "pdfjs-web/pdf_page_view", "pdfjs-web/text_layer_builder", "pdfjs-web/ui_utils"], function (require, exports, PdfJsModule, PDFPageView, TextLayerBuilder, PdfJsUtils) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
-    var pdfjs, PDFPageView, TextLayerBuilder, PdfJsUtils;
+    var PdfJsModule;
+    var pdfjs = PdfJsModule;
+    var PDFPageView, TextLayerBuilder, PdfJsUtils;
     function fallbackRequestAnimationFrame(callback, element) {
         window.setTimeout(callback, 1000 / 60);
     }
@@ -24,6 +26,7 @@ define(["require", "exports", "pdf.combined", "pdfjs-web/pdf_page_view", "pdfjs-
             var _this = this;
             this.mode = undefined;
             this.idxPresetScale = 0;
+            this.fittingScale = undefined;
             this.onResize = function () {
                 if (_this.mode !== ZoomingMode.PRESET) {
                     _this.fittingScale = undefined;
@@ -45,8 +48,8 @@ define(["require", "exports", "pdf.combined", "pdfjs-web/pdf_page_view", "pdfjs-
                         this.fittingScale = (container.width() - 30) / viewport.width;
                     }
                     else {
-                        var scaleHeight = ((container.height() - 30) / viewport.height);
-                        var scaleWidth = ((container.width() - 30) / viewport.width);
+                        var scaleHeight = (container.height() - 30) / viewport.height;
+                        var scaleWidth = (container.width() - 30) / viewport.width;
                         this.fittingScale = Math.min(scaleHeight, scaleWidth);
                     }
                 }
@@ -56,7 +59,7 @@ define(["require", "exports", "pdf.combined", "pdfjs-web/pdf_page_view", "pdfjs-
         };
         Zoom.prototype.zoomIn = function () {
             if (this.mode !== ZoomingMode.PRESET) {
-                var newPresetScale = -1;
+                var newPresetScale = 0;
                 if (this.fittingScale) {
                     for (var i = 0; i < Zoom.ZOOM_FACTORS.length; i++) {
                         if (Zoom.ZOOM_FACTORS[i] > this.fittingScale) {
@@ -65,7 +68,7 @@ define(["require", "exports", "pdf.combined", "pdfjs-web/pdf_page_view", "pdfjs-
                         }
                     }
                 }
-                this.idxPresetScale = Math.max(newPresetScale, 0);
+                this.idxPresetScale = newPresetScale;
                 this.mode = ZoomingMode.PRESET;
                 return true;
             }
@@ -158,18 +161,15 @@ define(["require", "exports", "pdf.combined", "pdfjs-web/pdf_page_view", "pdfjs-
     var CALMDOWN_TIMEOUT_MS = 150;
     function normalize_mousewheel(e) {
         var o = e.originalEvent;
-        var d = o.detail;
         var w = o.wheelDelta;
         var n = 225;
         var n1 = n - 1;
-        if (d !== 0) {
-            d = w / 120;
+        var detail = o.detail;
+        var delta = (!detail) ? w / 120 : (w && w / detail != 0) ? detail / (w / detail) : -detail / 1.35;
+        if (Math.abs(delta) > 1) {
+            delta = (delta > 0 ? 1 : -1) * (Math.pow(delta, 2) + n1) / n;
         }
-        else {
-            d = (w && w / d != 0) ? d / (w / d) : -d / 1.35;
-        }
-        d = Math.abs(d) > 1 ? (d > 0 ? 1 : -1) * (Math.pow(d, 2) + n1) / n : d;
-        return -Math.min(Math.max(d / 2, -1), 1);
+        return -Math.min(Math.max(delta / 2, -1), 1);
     }
     var CallbacksList = (function () {
         function CallbacksList() {
@@ -221,7 +221,7 @@ define(["require", "exports", "pdf.combined", "pdfjs-web/pdf_page_view", "pdfjs-
                 }
             };
             this.pageDown = function () {
-                if (_this.currentPage < _this.currentFile.numPages) {
+                if (_this.currentFile && _this.currentPage < _this.currentFile.numPages) {
                     _this.currentPage += 1;
                     _this.openCurrentPage();
                 }
@@ -286,7 +286,6 @@ define(["require", "exports", "pdf.combined", "pdfjs-web/pdf_page_view", "pdfjs-
         };
         PdfJsViewer.prototype.show = function (url, page, isResize, mainFileId) {
             if (isResize === void 0) { isResize = false; }
-            this.logger.error("Showing document " + url + " at page " + page);
             var isEmpty = this.queue.isEmpty();
             this.queue.push(url, page, isResize, mainFileId);
             if (isEmpty) {
@@ -307,14 +306,14 @@ define(["require", "exports", "pdf.combined", "pdfjs-web/pdf_page_view", "pdfjs-
             else {
                 var task_1 = this.queue.pull();
                 if (task_1.isNewFile) {
-                    this.currentFile = null;
+                    this.currentFile = undefined;
                     this.zoom.onResize();
                 }
                 this.currentTask = task_1;
                 this.currentPage = task_1.page;
                 var onDocumentSuccess = function (pdf) {
                     _this.currentFile = pdf;
-                    _this.currentFile.url = task_1.url;
+                    _this.currentFileUrl = task_1.url;
                     if (_this.currentPage > pdf.numPages) {
                         _this.currentPage = pdf.numPages;
                     }
@@ -407,9 +406,11 @@ define(["require", "exports", "pdf.combined", "pdfjs-web/pdf_page_view", "pdfjs-
             this.queue.clear();
         };
         PdfJsViewer.prototype.openCurrentPage = function () {
-            var lastCompletedMainFileId = (this.queue.isEmpty() && this.queue.lastCompleted)
-                ? this.queue.lastCompleted.mainFileId : undefined;
-            this.show(this.currentFile.url, this.currentPage, true, lastCompletedMainFileId);
+            if (this.currentFileUrl) {
+                var lastCompletedMainFileId = (this.queue.isEmpty() && this.queue.lastCompleted)
+                    ? this.queue.lastCompleted.mainFileId : undefined;
+                this.show(this.currentFileUrl, this.currentPage, true, lastCompletedMainFileId);
+            }
         };
         PdfJsViewer.prototype.resetPage = function () {
             if (this.currentPage !== undefined) {

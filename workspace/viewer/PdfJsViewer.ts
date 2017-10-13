@@ -1,9 +1,11 @@
-/// <amd-dependency path="pdf.combined" name="pdfjs"/>
+/// <amd-dependency path="pdf.combined" name="PdfJsModule"/>
 /// <amd-dependency path="pdfjs-web/pdf_page_view" name="PDFPageView"/>
 /// <amd-dependency path="pdfjs-web/text_layer_builder" name="TextLayerBuilder"/>
 /// <amd-dependency path="pdfjs-web/ui_utils" name="PdfJsUtils"/>
 
-let pdfjs, PDFPageView, TextLayerBuilder, PdfJsUtils: any;
+let PdfJsModule: any;
+let pdfjs: PDF.PDFJSStatic = PdfJsModule;
+let PDFPageView, TextLayerBuilder, PdfJsUtils: any;
 
 // Interfaces for communication with other components
 // Logger logs message without attracting user attention
@@ -36,7 +38,7 @@ if (!window.requestAnimationFrame) {
       window.oRequestAnimationFrame ||
       window.msRequestAnimationFrame ||
       fallbackRequestAnimationFrame;
-  pdfjs.disableStream = true
+  pdfjs.disableStream = true;
 }
 
 enum ZoomingMode {
@@ -51,14 +53,15 @@ class Zoom {
   // Preset zoom scales from 25% to 400%
   static readonly ZOOM_FACTORS = [0.25, 0.33, 0.5, 0.66, 0.75, 0.9, 1.0, 1.25, 1.5, 2.0, 4.0];
   // scaling mode, one of the constants listed above
-  private mode: ZoomingMode | undefined = undefined;
+  private mode?: ZoomingMode = undefined;
   // Index of one of the preset scales. Used when mode is PRESET
   private idxPresetScale = 0;
   // Dynamically calculated scale which is used when mode is FIT*
-  private fittingScale: number | undefined;
+  private fittingScale?: number = undefined;
   // Returns currently used scale in percents for display purposes
   current(): number {
-    return Math.round(100 * (this.mode == ZoomingMode.PRESET ? Zoom.ZOOM_FACTORS[this.idxPresetScale] : this.fittingScale || 1));
+    return Math.round(100 * (
+        this.mode == ZoomingMode.PRESET ? Zoom.ZOOM_FACTORS[this.idxPresetScale] : this.fittingScale || 1));
   }
 
   // Returns currently set zoom factor if preset mode is used or recalculates
@@ -76,8 +79,8 @@ class Zoom {
           this.fittingScale = (container.width() - 30) / viewport.width;
         } else {
           // leave some padding
-          const scaleHeight = ((container.height() - 30) / viewport.height);
-          const scaleWidth = ((container.width() - 30) / viewport.width);
+          const scaleHeight = (container.height() - 30) / viewport.height;
+          const scaleWidth = (container.width() - 30) / viewport.width;
           this.fittingScale = Math.min(scaleHeight, scaleWidth);
         }
       }
@@ -91,7 +94,7 @@ class Zoom {
   zoomIn(): boolean {
     if (this.mode !== ZoomingMode.PRESET) {
       // searching for the first scale which is greater than abs(current scale)
-      let newPresetScale = -1;
+      let newPresetScale = 0;
       if (this.fittingScale) {
         for (let i = 0; i < Zoom.ZOOM_FACTORS.length; i++) {
           if (Zoom.ZOOM_FACTORS[i] > this.fittingScale) {
@@ -100,7 +103,7 @@ class Zoom {
           }
         }
       }
-      this.idxPresetScale = Math.max(newPresetScale, 0);
+      this.idxPresetScale = newPresetScale;
       this.mode = ZoomingMode.PRESET;
       return true;
     }
@@ -240,21 +243,19 @@ const CALMDOWN_TIMEOUT_MS = 150;
 // Borrowed from http://stackoverflow.com/questions/5527601/normalizing-mousewheel-speed-across-browsers
 function normalize_mousewheel(e: JQueryMouseEventObject): number {
   let o = e.originalEvent as MouseWheelEvent;
-  let d = o.detail as number;
   let w = o.wheelDelta;
   let n = 225;
   let n1 = n-1;
 
+  let detail = o.detail;
   // Normalize delta
-  if (d !== 0) {
-    d = w / 120;
-  } else {
-    d = (w && w / d != 0) ? d / (w / d) : -d / 1.35;
+  let delta = (!detail) ? w / 120 : (w && w / detail != 0) ? detail / (w / detail) : -detail / 1.35;
+  if (Math.abs(delta) > 1) {
+    // Quadratic scale if |d| > 1
+    delta = (delta > 0 ? 1 : -1) * (Math.pow(delta, 2) + n1) / n;
   }
-  // Quadratic scale if |d| > 1
-  d = Math.abs(d) > 1 ? (d > 0 ? 1 : -1) * (Math.pow(d, 2) + n1) / n : d;
   // Delta *should* not be greater than 2...
-  return -Math.min(Math.max(d / 2, -1), 1);
+  return -Math.min(Math.max(delta / 2, -1), 1);
 }
 
 type Callback = (...args) => void;
@@ -272,12 +273,13 @@ class CallbacksList {
 }
 
 export class PdfJsViewer {
+
   static getPresetScales(): number[] { return Zoom.ZOOM_FACTORS; }
 
   // These are from pdfjs library
   pdfPageView: any;
-  currentFile: any;
-
+  currentFile?: PDF.PDFDocumentProxy;
+  currentFileUrl?: string;
   currentPage: number = 0;
   currentTask: PageTask | undefined;
 
@@ -355,7 +357,6 @@ export class PdfJsViewer {
   // Schedules a new page open task. If queue is empty, the task is executed immediately, otherwise it is
   // added to the queue and waits until the current task completes.
   public show(url: string, page: number, isResize: boolean = false, mainFileId?: string) {
-    this.logger.error(`Showing document ${url} at page ${page}`);
     const isEmpty = this.queue.isEmpty();
     this.queue.push(url, page, isResize, mainFileId);
     if (isEmpty) {
@@ -378,14 +379,14 @@ export class PdfJsViewer {
     } else {
       let task = this.queue.pull();
       if (task.isNewFile) {
-        this.currentFile = null;
+        this.currentFile = undefined;
         this.zoom.onResize();
       }
       this.currentTask = task;
       this.currentPage = task.page;
       const onDocumentSuccess = (pdf) => {
         this.currentFile = pdf;
-        this.currentFile.url = task.url;
+        this.currentFileUrl = task.url;
         if (this.currentPage > pdf.numPages) {
           this.currentPage = pdf.numPages;
         }
@@ -444,30 +445,30 @@ export class PdfJsViewer {
   }
 
   private positionCanvas() {
-    let canvas = $(".canvasWrapper", this.jqRoot);
+    const canvas = $(".canvasWrapper", this.jqRoot);
     canvas.removeClass("hide");
     if (canvas.width() < this.jqRoot.width()) {
-      canvas.css("left", `${(this.jqRoot.width()) / 2 - (canvas.width() / 2)}px`)
+      canvas.css("left", `${(this.jqRoot.width()) / 2 - (canvas.width() / 2)}px`);
     } else {
-      canvas.css("left", "0px")
+      canvas.css("left", "0px");
     }
     if (canvas.height() < this.jqRoot.height()) {
-      canvas.css("top", `${(this.jqRoot.height()) / 2 - (canvas.height() / 2)}px`)
+      canvas.css("top", `${(this.jqRoot.height()) / 2 - (canvas.height() / 2)}px`);
     } else {
-      canvas.css("top", "0px")
+      canvas.css("top", "0px");
     }
     if (canvas.width() < this.jqRoot.width() && canvas.height() < this.jqRoot.height()) {
-      canvas.addClass("shadow")
+      canvas.addClass("shadow");
     }
     else {
-      canvas.removeClass("shadow")
+      canvas.removeClass("shadow");
     }
-    let canvasOffset = canvas.position();
-    let textLayer = $(".textLayer", this.jqRoot);
+    const canvasOffset = canvas.position();
+    const textLayer = $(".textLayer", this.jqRoot);
     textLayer.css({
       top : canvasOffset.top,
       left : canvasOffset.left
-    })
+    });
   }
 
   resetCanvas() {
@@ -476,61 +477,73 @@ export class PdfJsViewer {
     }
     this.pdfPageView = undefined;
     this.jqRoot.empty();
-    this.queue.clear()
+    this.queue.clear();
   }
+
   private openCurrentPage() {
-    let lastCompletedMainFileId = (this.queue.isEmpty() && this.queue.lastCompleted)
-        ? this.queue.lastCompleted.mainFileId : undefined;
-    this.show(this.currentFile.url, this.currentPage, true, lastCompletedMainFileId)
+    if (this.currentFileUrl) {
+      let lastCompletedMainFileId = (this.queue.isEmpty() && this.queue.lastCompleted)
+          ? this.queue.lastCompleted.mainFileId : undefined;
+      this.show(this.currentFileUrl, this.currentPage, true, lastCompletedMainFileId);
+    }
   }
   private resetPage() {
     if (this.currentPage !== undefined) {
-      this.zoom.onResize()
+      this.zoom.onResize();
     }
   }
+
   addOnPageReady(callback: any) {
-    this.pageReady.add(callback)
+    this.pageReady.add(callback);
   }
+
   getRootElement(): JQuery { return this.jqRoot; }
 
   onResize() {
     if (this.currentFile) {
-      this.openCurrentPage()
+      this.openCurrentPage();
     }
   }
+
   pageUp = () => {
     if (this.currentPage > 1) {
       this.currentPage -= 1;
-      this.openCurrentPage()
+      this.openCurrentPage();
     }
   };
+
   pageDown = () => {
-    if (this.currentPage < this.currentFile.numPages) {
+    if (this.currentFile && this.currentPage < this.currentFile.numPages) {
       this.currentPage += 1;
-      this.openCurrentPage()
+      this.openCurrentPage();
     }
   };
+
   getCurrentPage(): number | undefined { return this.currentPage; }
+
   getZoomScale(): number { return this.zoom.current(); }
 
   // Toolbar button handlers
   zoomIn = () => {
-    this.zoom.zoomIn() && this.openCurrentPage()
+    this.zoom.zoomIn() && this.openCurrentPage();
   };
+
   zoomOut = () => {
-    this.zoom.zoomOut() && this.openCurrentPage()
+    this.zoom.zoomOut() && this.openCurrentPage();
   };
+
   zoomWidth = () => {
     this.zoom.setFitting(ZoomingMode.FIT_WIDTH);
-    this.openCurrentPage()
+    this.openCurrentPage();
   };
+
   zoomPage = () => {
     this.zoom.setFitting(ZoomingMode.FIT_PAGE);
-    this.openCurrentPage()
+    this.openCurrentPage();
   };
+
   zoomPreset(scale: number) {
     this.zoom.setPreset(scale);
-    this.openCurrentPage()
+    this.openCurrentPage();
   }
 }
-
