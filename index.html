@@ -3,35 +3,14 @@
   <script type="text/javascript" src="requirejs-2.1.16.js"></script>
   <script type="text/javascript" src="jquery-1.8.3.js"></script>
   <script type="text/javascript" src="pdfjs-demo-build.js"></script>
+    <script type="text/javascript" src="index.js"></script>
   <link rel="stylesheet" media="screen" href="text_layer_builder.css"/>
-  <style type="text/css">
-    #viewer {
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-    }
-  </style>
-  <script type="text/javascript">
-    require(["workspace/viewer/PdfJsViewer"], function(PdfJsViewerModule) {
-      loggerImpl = { error: function(msg) { console.log(msg); }}
-      alertImpl = { show: function(msg) { window.alert(msg); }}
-      utils = { stopEvent: function(e) {
-        if (e) {
-          e.preventDefault();
-          e.stopImmediatePropagation();
-          e.stopPropagation();
-        }        
-      }}
-      i18n = { text: function(key) { return key; }}
-      viewer = new PdfJsViewerModule.PdfJsViewer($("#viewer"), alertImpl, loggerImpl, utils, i18n);
-      viewer.show('/diploma.pdf', 1);
-    });
-  </script>
+  <link rel="stylesheet" href="workspace/styles.css"/>
 </head>
 <body>
+<div id="container">
   <div id="viewer">
   </div>
+</div>
 </body>
 </html>

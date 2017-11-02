@@ -310,6 +310,7 @@ export class PdfJsViewer {
               private readonly logger: Logger,
               private readonly utils: Utils,
               private readonly i18n: I18N) {
+    this.pdfPageView = [];
     this.zoom.setFitting(ZoomingMode.FIT_PAGE);
     jqRoot.unbind("wheel.pdfjs").bind("wheel.pdfjs", (e) => {
       if (this.isRendering) {
@@ -318,9 +319,6 @@ export class PdfJsViewer {
       let originalEvent = e.originalEvent as MouseEvent;
       if (originalEvent.ctrlKey || originalEvent.metaKey) {
         this.processEvent(e, this.zoomIn, this.zoomOut);
-      }
-      if (jqRoot.find(".canvasWrapper").hasClass("shadow")) { // # that is, the whole page is shown, no scrollbars
-        this.processEvent(e, this.pageUp, this.pageDown);
       }
     });
   }
@@ -364,6 +362,14 @@ export class PdfJsViewer {
     }
   }
 
+  public showAll(url:string, isResize: boolean = false){
+    var pdfViewer = this;
+    pdfjs.getDocument(url).then(function(pdf){
+      for(var i = 1; i <= pdf.numPages; i++){
+        pdfViewer.show(url, i, isResize);
+      }
+    })
+  }
   // This method completes current task. It pulls the queue if queue is not empty, otherwise it
   // shows error message if defined. Thus, should any step of task processing fail, we'll show error unless
   // we have more tasks.
@@ -387,10 +393,9 @@ export class PdfJsViewer {
       const onDocumentSuccess = (pdf) => {
         this.currentFile = pdf;
         this.currentFileUrl = task.url;
-        if (this.currentPage > pdf.numPages) {
-          this.currentPage = pdf.numPages;
-        }
+
         this.openPage(pdf, this.currentPage);
+
       };
 
       const onDocumentFailure = (error: string) => {
@@ -411,19 +416,18 @@ export class PdfJsViewer {
         }
       }
       let scale = this.zoom.factor(page, this.jqRoot);
-      if (!this.pdfPageView) {
-        this.pdfPageView = new PDFPageView.PDFPageView({
-          container: this.jqRoot.get(0),
-          id: pageNumber,
-          scale: scale,
-          defaultViewport: page.getViewport(1),
-          textLayerFactory: this.textLayerFactory
-        })
-      }
-      this.pdfPageView.update(scale);
-      this.pdfPageView.setPdfPage(page);
+      var pageView = new PDFPageView.PDFPageView({
+        container: this.jqRoot.get(0),
+        id: pageNumber,
+        scale: scale,
+        defaultViewport: page.getViewport(1),
+        textLayerFactory: this.textLayerFactory
+      })
+      this.pdfPageView.push(pageView);
+      pageView.update(scale);
+      pageView.setPdfPage(page);
       const onDrawSuccess = () => {
-        this.positionCanvas();
+        this.positionCanvas(pageNumber);
         this.pageReady.invoke();
         this.stopRendering();
         this.completeTaskAndPullQueue(undefined)
@@ -433,7 +437,7 @@ export class PdfJsViewer {
         this.logger.error(`Failed to render page ${pageNumber} from url=${pdfFile.url}, got error:${error}`);
         this.completeTaskAndPullQueue(this.i18n.text("js.pdfjs.failure.page_render", pageNumber, error))
       };
-      this.pdfPageView.draw().then(onDrawSuccess, onDrawFailure)
+      pageView.draw().then(onDrawSuccess, onDrawFailure)
     };
     const onPageFailure = (error: string) => {
       this.stopRendering();
@@ -444,8 +448,10 @@ export class PdfJsViewer {
     return true
   }
 
-  private positionCanvas() {
-    const canvas = $(".canvasWrapper", this.jqRoot);
+  private positionCanvas(pageNumber: number) {
+    const parent = $("#pageContainer" + pageNumber, this.jqRoot);
+    const canvas = parent.find(".canvasWrapper");
+
     canvas.removeClass("hide");
     if (canvas.width() < this.jqRoot.width()) {
       canvas.css("left", `${(this.jqRoot.width()) / 2 - (canvas.width() / 2)}px`);
@@ -464,7 +470,7 @@ export class PdfJsViewer {
       canvas.removeClass("shadow");
     }
     const canvasOffset = canvas.position();
-    const textLayer = $(".textLayer", this.jqRoot);
+    const textLayer = parent.find(".textLayer");
     textLayer.css({
       top : canvasOffset.top,
       left : canvasOffset.left
@@ -472,10 +478,12 @@ export class PdfJsViewer {
   }
 
   resetCanvas() {
-    if (this.pdfPageView) {
-      this.pdfPageView.destroy();
+    if (this.pdfPageView.length != 0) {
+      for(var i = 0; i != this.pdfPageView.length; i++){
+        this.pdfPageView[i].destroy();
+      }
+      this.pdfPageView = [];
     }
-    this.pdfPageView = undefined;
     this.jqRoot.empty();
     this.queue.clear();
   }
@@ -505,19 +513,6 @@ export class PdfJsViewer {
     }
   }
 
-  pageUp = () => {
-    if (this.currentPage > 1) {
-      this.currentPage -= 1;
-      this.openCurrentPage();
-    }
-  };
-
-  pageDown = () => {
-    if (this.currentFile && this.currentPage < this.currentFile.numPages) {
-      this.currentPage += 1;
-      this.openCurrentPage();
-    }
-  };
 
   getCurrentPage(): number | undefined { return this.currentPage; }
 

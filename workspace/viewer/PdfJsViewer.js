@@ -214,18 +214,6 @@ define(["require", "exports", "pdf.combined", "pdfjs-web/pdf_page_view", "pdfjs-
                 }
             };
             this.isRendering = false;
-            this.pageUp = function () {
-                if (_this.currentPage > 1) {
-                    _this.currentPage -= 1;
-                    _this.openCurrentPage();
-                }
-            };
-            this.pageDown = function () {
-                if (_this.currentFile && _this.currentPage < _this.currentFile.numPages) {
-                    _this.currentPage += 1;
-                    _this.openCurrentPage();
-                }
-            };
             this.zoomIn = function () {
                 _this.zoom.zoomIn() && _this.openCurrentPage();
             };
@@ -240,6 +228,7 @@ define(["require", "exports", "pdf.combined", "pdfjs-web/pdf_page_view", "pdfjs-
                 _this.zoom.setFitting(ZoomingMode.FIT_PAGE);
                 _this.openCurrentPage();
             };
+            this.pdfPageView = [];
             this.zoom.setFitting(ZoomingMode.FIT_PAGE);
             jqRoot.unbind("wheel.pdfjs").bind("wheel.pdfjs", function (e) {
                 if (_this.isRendering) {
@@ -248,9 +237,6 @@ define(["require", "exports", "pdf.combined", "pdfjs-web/pdf_page_view", "pdfjs-
                 var originalEvent = e.originalEvent;
                 if (originalEvent.ctrlKey || originalEvent.metaKey) {
                     _this.processEvent(e, _this.zoomIn, _this.zoomOut);
-                }
-                if (jqRoot.find(".canvasWrapper").hasClass("shadow")) {
-                    _this.processEvent(e, _this.pageUp, _this.pageDown);
                 }
             });
         }
@@ -292,6 +278,15 @@ define(["require", "exports", "pdf.combined", "pdfjs-web/pdf_page_view", "pdfjs-
                 this.completeTaskAndPullQueue(undefined);
             }
         };
+        PdfJsViewer.prototype.showAll = function (url, isResize) {
+            if (isResize === void 0) { isResize = false; }
+            var pdfViewer = this;
+            pdfjs.getDocument(url).then(function (pdf) {
+                for (var i = 1; i <= pdf.numPages; i++) {
+                    pdfViewer.show(url, i, isResize);
+                }
+            });
+        };
         PdfJsViewer.prototype.completeTaskAndPullQueue = function (errorMessage) {
             var _this = this;
             if (this.currentTask) {
@@ -314,9 +309,6 @@ define(["require", "exports", "pdf.combined", "pdfjs-web/pdf_page_view", "pdfjs-
                 var onDocumentSuccess = function (pdf) {
                     _this.currentFile = pdf;
                     _this.currentFileUrl = task_1.url;
-                    if (_this.currentPage > pdf.numPages) {
-                        _this.currentPage = pdf.numPages;
-                    }
                     _this.openPage(pdf, _this.currentPage);
                 };
                 var onDocumentFailure = function (error) {
@@ -337,19 +329,18 @@ define(["require", "exports", "pdf.combined", "pdfjs-web/pdf_page_view", "pdfjs-
                     }
                 }
                 var scale = _this.zoom.factor(page, _this.jqRoot);
-                if (!_this.pdfPageView) {
-                    _this.pdfPageView = new PDFPageView.PDFPageView({
-                        container: _this.jqRoot.get(0),
-                        id: pageNumber,
-                        scale: scale,
-                        defaultViewport: page.getViewport(1),
-                        textLayerFactory: _this.textLayerFactory
-                    });
-                }
-                _this.pdfPageView.update(scale);
-                _this.pdfPageView.setPdfPage(page);
+                var pageView = new PDFPageView.PDFPageView({
+                    container: _this.jqRoot.get(0),
+                    id: pageNumber,
+                    scale: scale,
+                    defaultViewport: page.getViewport(1),
+                    textLayerFactory: _this.textLayerFactory
+                });
+                _this.pdfPageView.push(pageView);
+                pageView.update(scale);
+                pageView.setPdfPage(page);
                 var onDrawSuccess = function () {
-                    _this.positionCanvas();
+                    _this.positionCanvas(pageNumber);
                     _this.pageReady.invoke();
                     _this.stopRendering();
                     _this.completeTaskAndPullQueue(undefined);
@@ -359,7 +350,7 @@ define(["require", "exports", "pdf.combined", "pdfjs-web/pdf_page_view", "pdfjs-
                     _this.logger.error("Failed to render page " + pageNumber + " from url=" + pdfFile.url + ", got error:" + error);
                     _this.completeTaskAndPullQueue(_this.i18n.text("js.pdfjs.failure.page_render", pageNumber, error));
                 };
-                _this.pdfPageView.draw().then(onDrawSuccess, onDrawFailure);
+                pageView.draw().then(onDrawSuccess, onDrawFailure);
             };
             var onPageFailure = function (error) {
                 _this.stopRendering();
@@ -369,8 +360,9 @@ define(["require", "exports", "pdf.combined", "pdfjs-web/pdf_page_view", "pdfjs-
             pdfFile.getPage(pageNumber).then(onPageSuccess, onPageFailure);
             return true;
         };
-        PdfJsViewer.prototype.positionCanvas = function () {
-            var canvas = $(".canvasWrapper", this.jqRoot);
+        PdfJsViewer.prototype.positionCanvas = function (pageNumber) {
+            var parent = $("#pageContainer" + pageNumber, this.jqRoot);
+            var canvas = parent.find(".canvasWrapper");
             canvas.removeClass("hide");
             if (canvas.width() < this.jqRoot.width()) {
                 canvas.css("left", (this.jqRoot.width()) / 2 - (canvas.width() / 2) + "px");
@@ -391,17 +383,19 @@ define(["require", "exports", "pdf.combined", "pdfjs-web/pdf_page_view", "pdfjs-
                 canvas.removeClass("shadow");
             }
             var canvasOffset = canvas.position();
-            var textLayer = $(".textLayer", this.jqRoot);
+            var textLayer = parent.find(".textLayer");
             textLayer.css({
                 top: canvasOffset.top,
                 left: canvasOffset.left
             });
         };
         PdfJsViewer.prototype.resetCanvas = function () {
-            if (this.pdfPageView) {
-                this.pdfPageView.destroy();
+            if (this.pdfPageView.length != 0) {
+                for (var i = 0; i != this.pdfPageView.length; i++) {
+                    this.pdfPageView[i].destroy();
+                }
+                this.pdfPageView = [];
             }
-            this.pdfPageView = undefined;
             this.jqRoot.empty();
             this.queue.clear();
         };
