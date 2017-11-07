@@ -2,10 +2,11 @@
 /// <amd-dependency path="pdfjs-web/pdf_page_view" name="PDFPageView"/>
 /// <amd-dependency path="pdfjs-web/text_layer_builder" name="TextLayerBuilder"/>
 /// <amd-dependency path="pdfjs-web/ui_utils" name="PdfJsUtils"/>
+/// <amd-dependency path="pdfjs-web/pdf_rendering_queue" name="RenderingQueue"/>
 
 let PdfJsModule: any;
 let pdfjs: PDF.PDFJSStatic = PdfJsModule;
-let PDFPageView, TextLayerBuilder, PdfJsUtils: any;
+let PDFPageView, TextLayerBuilder, PdfJsUtils, RenderingQueue: any;
 
 // Interfaces for communication with other components
 // Logger logs message without attracting user attention
@@ -283,7 +284,8 @@ export class PdfJsViewer {
   currentFileUrl?: string;
   currentPage: number = 0;
   currentTask: PageTask | undefined;
-
+  renderingQueue: any = new RenderingQueue.PDFRenderingQueue();
+  scroll: any = PdfJsUtils.watchScroll(this.getRootElement()[0], this.scrollUpdate.bind(this));
   // Some magic to handle weird touchpad events which send delta exceeding the threshold a few times in a row.
   // Dynamic threshold basically cuts some scrolling events depending on the scroll delta value.
   // Effective threshold will grow and shrink by THRESHOLD_FACTOR as it is hit,
@@ -311,6 +313,7 @@ export class PdfJsViewer {
               private readonly logger: Logger,
               private readonly utils: Utils,
               private readonly i18n: I18N) {
+    this.renderingQueue.setViewer(this);
     this.zoom.setFitting(ZoomingMode.FIT_PAGE);
     jqRoot.unbind("wheel.pdfjs").bind("wheel.pdfjs", (e) => {
       if (this.isRendering) {
@@ -364,11 +367,10 @@ export class PdfJsViewer {
 
   public showAll(url: string, isResize: boolean = false){
     pdfjs.getDocument(url).then((pdf) => {
-      this.numPages = pdf.numPages;
-      for(let i = 1; i <= this.numPages; i++){
-        this.show(url, i, isResize);
-      }
-    })
+        for (let i = 1; i <= pdf.numPages; i++) {
+            this.show(url, i, isResize);
+        }
+    });
   }
   // This method completes current task. It pulls the queue if queue is not empty, otherwise it
   // shows error message if defined. Thus, should any step of task processing fail, we'll show error unless
@@ -423,18 +425,9 @@ export class PdfJsViewer {
       this.pdfPagesView.push(pageView);
       pageView.update(scale);
       pageView.setPdfPage(page);
-      const onDrawSuccess = () => {
-        this.positionCanvas(pageNumber);
-        this.pageReady.invoke();
-        this.stopRendering();
-        this.completeTaskAndPullQueue(undefined)
-      };
-      const onDrawFailure = (error: string) => {
-        this.stopRendering();
-        this.logger.error(`Failed to render page ${pageNumber} from url=${pdfFile.url}, got error:${error}`);
-        this.completeTaskAndPullQueue(this.i18n.text("js.pdfjs.failure.page_render", pageNumber, error))
-      };
-      pageView.draw().then(onDrawSuccess, onDrawFailure)
+      this.stopRendering();
+      this.positionCanvas(pageNumber);
+      this.completeTaskAndPullQueue(undefined);
     };
     const onPageFailure = (error: string) => {
       this.stopRendering();
@@ -448,7 +441,6 @@ export class PdfJsViewer {
   private positionCanvas(pageNumber: number) {
     const parent = $(`#pageContainer${pageNumber}`, this.jqRoot);
     const canvas = parent.find(".canvasWrapper");
-
     canvas.removeClass("hide");
     if (canvas.width() < this.jqRoot.width()) {
       canvas.css("left", `${(this.jqRoot.width()) / 2 - (canvas.width() / 2)}px`);
@@ -529,27 +521,47 @@ export class PdfJsViewer {
     return this.currentPage;
   }
 
-  updateCurrentPage() {
-    if(this.pdfPagesView.length == 0){
-      this.currentPage = 0;
-    } else {
-      let scope = document.elementFromPoint(
-          this.pdfPagesView[0].viewport.width / 2,
-          this.pdfPagesView[0].viewport.height / 3
-      );
-      this.currentPage = $(scope).closest("div.page").data("page-number");
+  getVisiblePages() {
+    return PdfJsUtils.getVisibleElements(this.getRootElement()[0], this.pdfPagesView, true);
+  }
+
+  update() {
+    let visible = this.getVisiblePages();
+    let visiblePages = visible.views, numVisiblePages = visiblePages.length;
+
+    if (numVisiblePages === 0) {
+      return;
     }
+    this.renderingQueue.renderHighestPriority(visible);
+    this.currentPage = visible.first.id;
+  }
+
+  forceRendering(currentlyVisiblePages) {
+      let visiblePages = currentlyVisiblePages || this.getVisiblePages();
+      let pageView = this.renderingQueue.getHighestPriority(visiblePages, this.pdfPagesView, this.scroll.down);
+      if (pageView) {
+        this.renderingQueue.renderView(pageView);
+        return true;
+      }
+      return false;
+  }
+
+  scrollUpdate() {
+    if (this.numPages === 0) {
+        return;
+    }
+    this.update();
   }
 
   getZoomScale(): number { return this.zoom.current(); }
 
   // Toolbar button handlers
   zoomIn = () => {
-    this.zoom.zoomIn() && this.showPage(this.currentPage);
+    this.zoom.zoomIn();
   };
 
   zoomOut = () => {
-    this.zoom.zoomOut() && this.showPage(this.currentPage);
+    this.zoom.zoomOut();
   };
 
   zoomWidth = () => {

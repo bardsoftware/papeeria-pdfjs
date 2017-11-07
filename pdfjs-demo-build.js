@@ -50495,7 +50495,6 @@ var PDFRenderingQueue = (function PDFRenderingQueueClosure() {
         clearTimeout(this.idleTimeout);
         this.idleTimeout = null;
       }
-
       // Pages have a higher priority than thumbnails, so check them first.
       if (this.pdfViewer.forceRendering(currentlyVisiblePages)) {
         return;
@@ -50946,7 +50945,6 @@ var PDFPageView = (function PDFPageViewClosure() {
 
     update: function PDFPageView_update(scale, rotation) {
       this.scale = scale || this.scale;
-
       if (typeof rotation !== 'undefined') {
         this.rotation = rotation;
       }
@@ -51223,7 +51221,6 @@ var PDFPageView = (function PDFPageViewClosure() {
           pageNumber: self.id,
           cssTransform: false,
         });
-
         if (!error) {
           resolveRenderPromise(undefined);
         } else {
@@ -51741,12 +51738,12 @@ exports.TextLayerBuilder = TextLayerBuilder;
 exports.DefaultTextLayerFactory = DefaultTextLayerFactory;
 }));
 
-define('workspace/viewer/PdfJsViewer',["require", "exports", "pdf.combined", "pdfjs-web/pdf_page_view", "pdfjs-web/text_layer_builder", "pdfjs-web/ui_utils"], function (require, exports, PdfJsModule, PDFPageView, TextLayerBuilder, PdfJsUtils) {
+define('workspace/viewer/PdfJsViewer',["require", "exports", "pdf.combined", "pdfjs-web/pdf_page_view", "pdfjs-web/text_layer_builder", "pdfjs-web/ui_utils", "pdfjs-web/pdf_rendering_queue"], function (require, exports, PdfJsModule, PDFPageView, TextLayerBuilder, PdfJsUtils, RenderingQueue) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var PdfJsModule;
     var pdfjs = PdfJsModule;
-    var PDFPageView, TextLayerBuilder, PdfJsUtils;
+    var PDFPageView, TextLayerBuilder, PdfJsUtils, RenderingQueue;
     function fallbackRequestAnimationFrame(callback, element) {
         window.setTimeout(callback, 1000 / 60);
     }
@@ -51942,7 +51939,10 @@ define('workspace/viewer/PdfJsViewer',["require", "exports", "pdf.combined", "pd
             this.logger = logger;
             this.utils = utils;
             this.i18n = i18n;
+            this.pdfPagesView = [];
             this.currentPage = 0;
+            this.renderingQueue = new RenderingQueue.PDFRenderingQueue();
+            this.scroll = PdfJsUtils.watchScroll(this.getRootElement()[0], this.scrollUpdate.bind(this));
             this.effectiveThreshold = THRESHOLD_INITIAL;
             this.zoom = new Zoom();
             this.queue = new Queue();
@@ -51957,21 +51957,33 @@ define('workspace/viewer/PdfJsViewer',["require", "exports", "pdf.combined", "pd
                 }
             };
             this.isRendering = false;
+            this.pageUp = function () {
+                if (_this.currentPage > 1) {
+                    _this.currentPage -= 1;
+                    _this.showPage(_this.currentPage);
+                }
+            };
+            this.pageDown = function () {
+                if (_this.currentFile && _this.currentPage < _this.currentFile.numPages) {
+                    _this.currentPage += 1;
+                    _this.showPage(_this.currentPage);
+                }
+            };
             this.zoomIn = function () {
-                _this.zoom.zoomIn() && _this.openCurrentPage();
+                _this.zoom.zoomIn();
             };
             this.zoomOut = function () {
-                _this.zoom.zoomOut() && _this.openCurrentPage();
+                _this.zoom.zoomOut();
             };
             this.zoomWidth = function () {
                 _this.zoom.setFitting(ZoomingMode.FIT_WIDTH);
-                _this.openCurrentPage();
+                _this.showPage(_this.currentPage);
             };
             this.zoomPage = function () {
                 _this.zoom.setFitting(ZoomingMode.FIT_PAGE);
-                _this.openCurrentPage();
+                _this.showPage(_this.currentPage);
             };
-            this.pdfPageView = [];
+            this.renderingQueue.setViewer(this);
             this.zoom.setFitting(ZoomingMode.FIT_PAGE);
             jqRoot.unbind("wheel.pdfjs").bind("wheel.pdfjs", function (e) {
                 if (_this.isRendering) {
@@ -52022,11 +52034,11 @@ define('workspace/viewer/PdfJsViewer',["require", "exports", "pdf.combined", "pd
             }
         };
         PdfJsViewer.prototype.showAll = function (url, isResize) {
+            var _this = this;
             if (isResize === void 0) { isResize = false; }
-            var pdfViewer = this;
             pdfjs.getDocument(url).then(function (pdf) {
                 for (var i = 1; i <= pdf.numPages; i++) {
-                    pdfViewer.show(url, i, isResize);
+                    _this.show(url, i, isResize);
                 }
             });
         };
@@ -52048,11 +52060,10 @@ define('workspace/viewer/PdfJsViewer',["require", "exports", "pdf.combined", "pd
                     this.zoom.onResize();
                 }
                 this.currentTask = task_1;
-                this.currentPage = task_1.page;
                 var onDocumentSuccess = function (pdf) {
                     _this.currentFile = pdf;
                     _this.currentFileUrl = task_1.url;
-                    _this.openPage(pdf, _this.currentPage);
+                    _this.openPage(pdf, _this.currentTask.page);
                 };
                 var onDocumentFailure = function (error) {
                     _this.logger.error("Failed to fetch url=" + task_1.url + ", got error:" + error);
@@ -52079,21 +52090,12 @@ define('workspace/viewer/PdfJsViewer',["require", "exports", "pdf.combined", "pd
                     defaultViewport: page.getViewport(1),
                     textLayerFactory: _this.textLayerFactory
                 });
-                _this.pdfPageView.push(pageView);
+                _this.pdfPagesView.push(pageView);
                 pageView.update(scale);
                 pageView.setPdfPage(page);
-                var onDrawSuccess = function () {
-                    _this.positionCanvas(pageNumber);
-                    _this.pageReady.invoke();
-                    _this.stopRendering();
-                    _this.completeTaskAndPullQueue(undefined);
-                };
-                var onDrawFailure = function (error) {
-                    _this.stopRendering();
-                    _this.logger.error("Failed to render page " + pageNumber + " from url=" + pdfFile.url + ", got error:" + error);
-                    _this.completeTaskAndPullQueue(_this.i18n.text("js.pdfjs.failure.page_render", pageNumber, error));
-                };
-                pageView.draw().then(onDrawSuccess, onDrawFailure);
+                _this.stopRendering();
+                _this.positionCanvas(pageNumber);
+                _this.completeTaskAndPullQueue(undefined);
             };
             var onPageFailure = function (error) {
                 _this.stopRendering();
@@ -52133,21 +52135,22 @@ define('workspace/viewer/PdfJsViewer',["require", "exports", "pdf.combined", "pd
             });
         };
         PdfJsViewer.prototype.resetCanvas = function () {
-            if (this.pdfPageView !== undefined && this.pdfPageView.length != 0) {
-                for (var i = 0; i != this.pdfPageView.length; i++) {
-                    this.pdfPageView[i].destroy();
+            if (this.pdfPagesView.length != 0) {
+                for (var _i = 0, _a = this.pdfPagesView; _i < _a.length; _i++) {
+                    var i = _a[_i];
+                    this.pdfPagesView[i].destroy();
                 }
+                this.pdfPagesView = [];
             }
-            this.pdfPageView = [];
             this.jqRoot.empty();
             this.queue.clear();
         };
-        PdfJsViewer.prototype.openCurrentPage = function () {
-            if (this.currentFileUrl) {
-                var lastCompletedMainFileId = (this.queue.isEmpty() && this.queue.lastCompleted)
-                    ? this.queue.lastCompleted.mainFileId : undefined;
-                this.show(this.currentFileUrl, this.currentPage, true, lastCompletedMainFileId);
+        PdfJsViewer.prototype.showPage = function (page) {
+            if (page > this.numPages) {
+                page = this.numPages;
             }
+            var pageWrapper = $("div").find("[data-page-number='" + page + "']")[0];
+            pageWrapper.scrollIntoView();
         };
         PdfJsViewer.prototype.resetPage = function () {
             if (this.currentPage !== undefined) {
@@ -52160,14 +52163,43 @@ define('workspace/viewer/PdfJsViewer',["require", "exports", "pdf.combined", "pd
         PdfJsViewer.prototype.getRootElement = function () { return this.jqRoot; };
         PdfJsViewer.prototype.onResize = function () {
             if (this.currentFile) {
-                this.openCurrentPage();
+                this.showPage(this.currentPage);
             }
         };
-        PdfJsViewer.prototype.getCurrentPage = function () { return this.currentPage; };
+        PdfJsViewer.prototype.getCurrentPage = function () {
+            return this.currentPage;
+        };
+        PdfJsViewer.prototype.getVisiblePages = function () {
+            return PdfJsUtils.getVisibleElements(this.getRootElement()[0], this.pdfPagesView, true);
+        };
+        PdfJsViewer.prototype.update = function () {
+            var visible = this.getVisiblePages();
+            var visiblePages = visible.views, numVisiblePages = visiblePages.length;
+            if (numVisiblePages === 0) {
+                return;
+            }
+            this.renderingQueue.renderHighestPriority(visible);
+            this.currentPage = visible.first.id;
+        };
+        PdfJsViewer.prototype.forceRendering = function (currentlyVisiblePages) {
+            var visiblePages = currentlyVisiblePages || this.getVisiblePages();
+            var pageView = this.renderingQueue.getHighestPriority(visiblePages, this.pdfPagesView, this.scroll.down);
+            if (pageView) {
+                this.renderingQueue.renderView(pageView);
+                return true;
+            }
+            return false;
+        };
+        PdfJsViewer.prototype.scrollUpdate = function () {
+            if (this.numPages === 0) {
+                return;
+            }
+            this.update();
+        };
         PdfJsViewer.prototype.getZoomScale = function () { return this.zoom.current(); };
         PdfJsViewer.prototype.zoomPreset = function (scale) {
             this.zoom.setPreset(scale);
-            this.openCurrentPage();
+            this.showPage(this.currentPage);
         };
         return PdfJsViewer;
     }());
