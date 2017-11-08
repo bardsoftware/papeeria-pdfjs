@@ -278,7 +278,11 @@ export class PdfJsViewer {
   static getPresetScales(): number[] { return Zoom.ZOOM_FACTORS; }
 
   // These are from pdfjs library
+<<<<<<< HEAD
   pdfPagesView: any[] = [];
+=======
+  pdfPageView: any;
+>>>>>>> parent of 4f031cd... - added functionality to get current visible page
   currentFile?: PDF.PDFDocumentProxy;
   currentFileUrl?: string;
   currentPage: number = 0;
@@ -312,7 +316,11 @@ export class PdfJsViewer {
               private readonly logger: Logger,
               private readonly utils: Utils,
               private readonly i18n: I18N) {
+<<<<<<< HEAD
     this.renderingQueue.setViewer(this);
+=======
+    this.pdfPageView = [];
+>>>>>>> parent of 4f031cd... - added functionality to get current visible page
     this.zoom.setFitting(ZoomingMode.FIT_PAGE);
     jqRoot.unbind("wheel.pdfjs").bind("wheel.pdfjs", (e) => {
       if (this.isRendering) {
@@ -364,12 +372,22 @@ export class PdfJsViewer {
     }
   }
 
+<<<<<<< HEAD
   public showAll(url: string, isResize: boolean = false){
     pdfjs.getDocument(url).then((pdf) => {
         for (let i = 1; i <= pdf.numPages; i++) {
             this.show(url, i, isResize);
         }
     });
+=======
+  public showAll(url:string, isResize: boolean = false){
+    var pdfViewer = this;
+    pdfjs.getDocument(url).then(function(pdf){
+      for(var i = 1; i <= pdf.numPages; i++){
+        pdfViewer.show(url, i, isResize);
+      }
+    })
+>>>>>>> parent of 4f031cd... - added functionality to get current visible page
   }
   // This method completes current task. It pulls the queue if queue is not empty, otherwise it
   // shows error message if defined. Thus, should any step of task processing fail, we'll show error unless
@@ -390,10 +408,13 @@ export class PdfJsViewer {
         this.zoom.onResize();
       }
       this.currentTask = task;
+      this.currentPage = task.page;
       const onDocumentSuccess = (pdf) => {
         this.currentFile = pdf;
         this.currentFileUrl = task.url;
-        this.openPage(pdf, this.currentTask.page);
+
+        this.openPage(pdf, this.currentPage);
+
       };
 
       const onDocumentFailure = (error: string) => {
@@ -421,7 +442,7 @@ export class PdfJsViewer {
         defaultViewport: page.getViewport(1),
         textLayerFactory: this.textLayerFactory
       })
-      this.pdfPagesView.push(pageView);
+      this.pdfPageView.push(pageView);
       pageView.update(scale);
       pageView.setPdfPage(page);
       this.stopRendering();
@@ -436,8 +457,13 @@ export class PdfJsViewer {
     return true
   }
 
+<<<<<<< HEAD
   public positionCanvas(pageNumber: number) {
     const parent = $(`#pageContainer${pageNumber}`, this.jqRoot);
+=======
+  private positionCanvas(pageNumber: number) {
+    const parent = $("#pageContainer" + pageNumber, this.jqRoot);
+>>>>>>> parent of 4f031cd... - added functionality to get current visible page
     const canvas = parent.find(".canvasWrapper");
     canvas.removeClass("hide");
     if (canvas.width() < this.jqRoot.width()) {
@@ -465,16 +491,23 @@ export class PdfJsViewer {
   }
 
   resetCanvas() {
+<<<<<<< HEAD
     if (this.pdfPagesView.length != 0) {
       for(let pageView of this.pdfPagesView){
         pageView.destroy();
+=======
+    if (this.pdfPageView.length != 0) {
+      for(var i = 0; i != this.pdfPageView.length; i++){
+        this.pdfPageView[i].destroy();
+>>>>>>> parent of 4f031cd... - added functionality to get current visible page
       }
-      this.pdfPagesView = [];
+      this.pdfPageView = [];
     }
     this.jqRoot.empty();
     this.queue.clear();
   }
 
+<<<<<<< HEAD
   public showPage(page: number) {
     if(!this.currentFile || this.currentFile.numPages === 0){
       return;
@@ -484,8 +517,15 @@ export class PdfJsViewer {
     }
     let pageWrapper = this.getRootElement().find(`[data-page-number='${page}']`)[0];
     pageWrapper.scrollIntoView();
+=======
+  private openCurrentPage() {
+    if (this.currentFileUrl) {
+      let lastCompletedMainFileId = (this.queue.isEmpty() && this.queue.lastCompleted)
+          ? this.queue.lastCompleted.mainFileId : undefined;
+      this.show(this.currentFileUrl, this.currentPage, true, lastCompletedMainFileId);
+    }
+>>>>>>> parent of 4f031cd... - added functionality to get current visible page
   }
-
   private resetPage() {
     if (this.currentPage !== undefined) {
       this.zoom.onResize();
@@ -500,17 +540,12 @@ export class PdfJsViewer {
 
   onResize() {
     if (this.currentFile) {
-      this.showPage(this.currentPage);
+      this.openCurrentPage();
     }
   }
 
-  pageUp = () => {
-      if (this.currentPage > 1) {
-          this.currentPage -= 1;
-          this.showPage(this.currentPage);
-      }
-  };
 
+<<<<<<< HEAD
   pageDown = () => {
       if (this.currentFile && this.currentPage < this.currentFile.numPages) {
           this.currentPage += 1;
@@ -553,30 +588,41 @@ export class PdfJsViewer {
     }
     this.update();
   }
+=======
+  getCurrentPage(): number | undefined { return this.currentPage; }
+>>>>>>> parent of 4f031cd... - added functionality to get current visible page
 
   getZoomScale(): number { return this.zoom.current(); }
 
   // Toolbar button handlers
   zoomIn = () => {
+<<<<<<< HEAD
     this.zoom.zoomIn();
   };
 
   zoomOut = () => {
     this.zoom.zoomOut();
+=======
+    this.zoom.zoomIn() && this.openCurrentPage();
+  };
+
+  zoomOut = () => {
+    this.zoom.zoomOut() && this.openCurrentPage();
+>>>>>>> parent of 4f031cd... - added functionality to get current visible page
   };
 
   zoomWidth = () => {
     this.zoom.setFitting(ZoomingMode.FIT_WIDTH);
-      this.showPage(this.currentPage);
+    this.openCurrentPage();
   };
 
   zoomPage = () => {
     this.zoom.setFitting(ZoomingMode.FIT_PAGE);
-      this.showPage(this.currentPage);
+    this.openCurrentPage();
   };
 
   zoomPreset(scale: number) {
     this.zoom.setPreset(scale);
-      this.showPage(this.currentPage);
+    this.openCurrentPage();
   }
 }
