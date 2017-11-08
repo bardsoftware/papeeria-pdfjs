@@ -279,7 +279,6 @@ export class PdfJsViewer {
 
   // These are from pdfjs library
   pdfPagesView: any[] = [];
-  numPages: number;
   currentFile?: PDF.PDFDocumentProxy;
   currentFileUrl?: string;
   currentPage: number = 0;
@@ -426,7 +425,6 @@ export class PdfJsViewer {
       pageView.update(scale);
       pageView.setPdfPage(page);
       this.stopRendering();
-      this.positionCanvas(pageNumber);
       this.completeTaskAndPullQueue(undefined);
     };
     const onPageFailure = (error: string) => {
@@ -438,7 +436,7 @@ export class PdfJsViewer {
     return true
   }
 
-  private positionCanvas(pageNumber: number) {
+  public positionCanvas(pageNumber: number) {
     const parent = $(`#pageContainer${pageNumber}`, this.jqRoot);
     const canvas = parent.find(".canvasWrapper");
     canvas.removeClass("hide");
@@ -468,8 +466,8 @@ export class PdfJsViewer {
 
   resetCanvas() {
     if (this.pdfPagesView.length != 0) {
-      for(let i of this.pdfPagesView){
-        this.pdfPagesView[i].destroy();
+      for(let pageView of this.pdfPagesView){
+        pageView.destroy();
       }
       this.pdfPagesView = [];
     }
@@ -478,10 +476,13 @@ export class PdfJsViewer {
   }
 
   public showPage(page: number) {
-    if(page > this.numPages){
-      page = this.numPages;
+    if(!this.currentFile || this.currentFile.numPages === 0){
+      return;
     }
-    let pageWrapper = $("div").find(`[data-page-number='${page}']`)[0];
+    if(page > this.currentFile.numPages){
+      page = this.currentFile.numPages;
+    }
+    let pageWrapper = this.getRootElement().find(`[data-page-number='${page}']`)[0];
     pageWrapper.scrollIntoView();
   }
 
@@ -533,7 +534,7 @@ export class PdfJsViewer {
       return;
     }
     this.renderingQueue.renderHighestPriority(visible);
-    this.currentPage = visible.first.id;
+    this.currentPage = visible.views[0].id;
   }
 
   forceRendering(currentlyVisiblePages) {
@@ -547,7 +548,7 @@ export class PdfJsViewer {
   }
 
   scrollUpdate() {
-    if (this.numPages === 0) {
+    if (!this.currentFile || this.currentFile.numPages === 0) {
         return;
     }
     this.update();
