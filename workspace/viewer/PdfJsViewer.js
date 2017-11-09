@@ -1,9 +1,9 @@
-define(["require", "exports", "pdf.combined", "pdfjs-web/pdf_page_view", "pdfjs-web/text_layer_builder", "pdfjs-web/ui_utils", "pdfjs-web/pdf_rendering_queue"], function (require, exports, PdfJsModule, PDFPageView, TextLayerBuilder, PdfJsUtils, RenderingQueue) {
+define(["require", "exports", "pdf.combined", "pdfjs-web/pdf_page_view", "pdfjs-web/text_layer_builder", "pdfjs-web/ui_utils"], function (require, exports, PdfJsModule, PDFPageView, TextLayerBuilder, PdfJsUtils) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var PdfJsModule;
     var pdfjs = PdfJsModule;
-    var PDFPageView, TextLayerBuilder, PdfJsUtils, RenderingQueue;
+    var PDFPageView, TextLayerBuilder, PdfJsUtils;
     function fallbackRequestAnimationFrame(callback, element) {
         window.setTimeout(callback, 1000 / 60);
     }
@@ -199,10 +199,8 @@ define(["require", "exports", "pdf.combined", "pdfjs-web/pdf_page_view", "pdfjs-
             this.logger = logger;
             this.utils = utils;
             this.i18n = i18n;
-            this.pdfPagesView = [];
+            this.loadedPages = [];
             this.currentPage = 0;
-            this.renderingQueue = new RenderingQueue.PDFRenderingQueue();
-            this.scroll = PdfJsUtils.watchScroll(this.getRootElement()[0], this.scrollUpdate.bind(this));
             this.effectiveThreshold = THRESHOLD_INITIAL;
             this.zoom = new Zoom();
             this.queue = new Queue();
@@ -230,10 +228,10 @@ define(["require", "exports", "pdf.combined", "pdfjs-web/pdf_page_view", "pdfjs-
                 }
             };
             this.zoomIn = function () {
-                _this.zoom.zoomIn();
+                _this.zoom.zoomIn() && _this.showPage(_this.currentPage);
             };
             this.zoomOut = function () {
-                _this.zoom.zoomOut();
+                _this.zoom.zoomOut() && _this.showPage(_this.currentPage);
             };
             this.zoomWidth = function () {
                 _this.zoom.setFitting(ZoomingMode.FIT_WIDTH);
@@ -243,7 +241,6 @@ define(["require", "exports", "pdf.combined", "pdfjs-web/pdf_page_view", "pdfjs-
                 _this.zoom.setFitting(ZoomingMode.FIT_PAGE);
                 _this.showPage(_this.currentPage);
             };
-            this.renderingQueue.setViewer(this);
             this.zoom.setFitting(ZoomingMode.FIT_PAGE);
             jqRoot.unbind("wheel.pdfjs").bind("wheel.pdfjs", function (e) {
                 if (_this.isRendering) {
@@ -350,12 +347,21 @@ define(["require", "exports", "pdf.combined", "pdfjs-web/pdf_page_view", "pdfjs-
                     defaultViewport: page.getViewport(1),
                     textLayerFactory: _this.textLayerFactory
                 });
-                _this.pdfPagesView.push(pageView);
+                _this.loadedPages.push(pageView);
                 pageView.update(scale);
                 pageView.setPdfPage(page);
-                _this.stopRendering();
-                _this.positionCanvas(pageNumber);
-                _this.completeTaskAndPullQueue(undefined);
+                var onDrawSuccess = function () {
+                    _this.positionCanvas(pageNumber);
+                    _this.pageReady.invoke();
+                    _this.stopRendering();
+                    _this.completeTaskAndPullQueue(undefined);
+                };
+                var onDrawFailure = function (error) {
+                    _this.stopRendering();
+                    _this.logger.error("Failed to render page " + pageNumber + " from url=" + pdfFile.url + ", got error:" + error);
+                    _this.completeTaskAndPullQueue(_this.i18n.text("js.pdfjs.failure.page_render", pageNumber, error));
+                };
+                pageView.draw().then(onDrawSuccess, onDrawFailure);
             };
             var onPageFailure = function (error) {
                 _this.stopRendering();
@@ -395,12 +401,12 @@ define(["require", "exports", "pdf.combined", "pdfjs-web/pdf_page_view", "pdfjs-
             });
         };
         PdfJsViewer.prototype.resetCanvas = function () {
-            if (this.pdfPagesView.length != 0) {
-                for (var _i = 0, _a = this.pdfPagesView; _i < _a.length; _i++) {
-                    var i = _a[_i];
-                    this.pdfPagesView[i].destroy();
+            if (this.loadedPages.length != 0) {
+                for (var _i = 0, _a = this.loadedPages; _i < _a.length; _i++) {
+                    var page = _a[_i];
+                    page.destroy();
                 }
-                this.pdfPagesView = [];
+                this.loadedPages = [];
             }
             this.jqRoot.empty();
             this.queue.clear();
@@ -428,33 +434,6 @@ define(["require", "exports", "pdf.combined", "pdfjs-web/pdf_page_view", "pdfjs-
         };
         PdfJsViewer.prototype.getCurrentPage = function () {
             return this.currentPage;
-        };
-        PdfJsViewer.prototype.getVisiblePages = function () {
-            return PdfJsUtils.getVisibleElements(this.getRootElement()[0], this.pdfPagesView, true);
-        };
-        PdfJsViewer.prototype.update = function () {
-            var visible = this.getVisiblePages();
-            var visiblePages = visible.views, numVisiblePages = visiblePages.length;
-            if (numVisiblePages === 0) {
-                return;
-            }
-            this.renderingQueue.renderHighestPriority(visible);
-            this.currentPage = visible.first.id;
-        };
-        PdfJsViewer.prototype.forceRendering = function (currentlyVisiblePages) {
-            var visiblePages = currentlyVisiblePages || this.getVisiblePages();
-            var pageView = this.renderingQueue.getHighestPriority(visiblePages, this.pdfPagesView, this.scroll.down);
-            if (pageView) {
-                this.renderingQueue.renderView(pageView);
-                return true;
-            }
-            return false;
-        };
-        PdfJsViewer.prototype.scrollUpdate = function () {
-            if (this.numPages === 0) {
-                return;
-            }
-            this.update();
         };
         PdfJsViewer.prototype.getZoomScale = function () { return this.zoom.current(); };
         PdfJsViewer.prototype.zoomPreset = function (scale) {

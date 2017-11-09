@@ -277,7 +277,8 @@ export class PdfJsViewer {
   static getPresetScales(): number[] { return Zoom.ZOOM_FACTORS; }
 
   // These are from pdfjs library
-  pdfPageView: any;
+  loadedPages: any[] = [];
+  numPages: number;
   currentFile?: PDF.PDFDocumentProxy;
   currentFileUrl?: string;
   currentPage: number = 0;
@@ -310,7 +311,6 @@ export class PdfJsViewer {
               private readonly logger: Logger,
               private readonly utils: Utils,
               private readonly i18n: I18N) {
-    this.pdfPageView = [];
     this.zoom.setFitting(ZoomingMode.FIT_PAGE);
     jqRoot.unbind("wheel.pdfjs").bind("wheel.pdfjs", (e) => {
       if (this.isRendering) {
@@ -362,11 +362,10 @@ export class PdfJsViewer {
     }
   }
 
-  public showAll(url:string, isResize: boolean = false){
-    var pdfViewer = this;
-    pdfjs.getDocument(url).then(function(pdf){
-      for(var i = 1; i <= pdf.numPages; i++){
-        pdfViewer.show(url, i, isResize);
+  public showAll(url: string, isResize: boolean = false){
+    pdfjs.getDocument(url).then((pdf) => {
+      for(let i = 1; i <= pdf.numPages; i++){
+        this.show(url, i, isResize);
       }
     })
   }
@@ -389,13 +388,10 @@ export class PdfJsViewer {
         this.zoom.onResize();
       }
       this.currentTask = task;
-      this.currentPage = task.page;
       const onDocumentSuccess = (pdf) => {
         this.currentFile = pdf;
         this.currentFileUrl = task.url;
-
-        this.openPage(pdf, this.currentPage);
-
+        this.openPage(pdf, this.currentTask.page);
       };
 
       const onDocumentFailure = (error: string) => {
@@ -423,7 +419,7 @@ export class PdfJsViewer {
         defaultViewport: page.getViewport(1),
         textLayerFactory: this.textLayerFactory
       })
-      this.pdfPageView.push(pageView);
+      this.loadedPages.push(pageView);
       pageView.update(scale);
       pageView.setPdfPage(page);
       const onDrawSuccess = () => {
@@ -449,7 +445,7 @@ export class PdfJsViewer {
   }
 
   private positionCanvas(pageNumber: number) {
-    const parent = $("#pageContainer" + pageNumber, this.jqRoot);
+    const parent = $(`#pageContainer${pageNumber}`, this.jqRoot);
     const canvas = parent.find(".canvasWrapper");
 
     canvas.removeClass("hide");
@@ -478,23 +474,24 @@ export class PdfJsViewer {
   }
 
   resetCanvas() {
-    if (this.pdfPageView.length != 0) {
-      for(var i = 0; i != this.pdfPageView.length; i++){
-        this.pdfPageView[i].destroy();
+    if (this.loadedPages.length != 0) {
+      for(let page of this.loadedPages){
+        page.destroy();
       }
-      this.pdfPageView = [];
+      this.loadedPages = [];
     }
     this.jqRoot.empty();
     this.queue.clear();
   }
 
-  private openCurrentPage() {
-    if (this.currentFileUrl) {
-      let lastCompletedMainFileId = (this.queue.isEmpty() && this.queue.lastCompleted)
-          ? this.queue.lastCompleted.mainFileId : undefined;
-      this.show(this.currentFileUrl, this.currentPage, true, lastCompletedMainFileId);
+  public showPage(page: number) {
+    if(page > this.numPages){
+      page = this.numPages;
     }
+    let pageWrapper = $("div").find(`[data-page-number='${page}']`)[0];
+    pageWrapper.scrollIntoView();
   }
+
   private resetPage() {
     if (this.currentPage !== undefined) {
       this.zoom.onResize();
@@ -509,36 +506,51 @@ export class PdfJsViewer {
 
   onResize() {
     if (this.currentFile) {
-      this.openCurrentPage();
+      this.showPage(this.currentPage);
     }
   }
 
+  pageUp = () => {
+      if (this.currentPage > 1) {
+          this.currentPage -= 1;
+          this.showPage(this.currentPage);
+      }
+  };
 
-  getCurrentPage(): number | undefined { return this.currentPage; }
+  pageDown = () => {
+      if (this.currentFile && this.currentPage < this.currentFile.numPages) {
+          this.currentPage += 1;
+          this.showPage(this.currentPage);
+      }
+  };
+
+  getCurrentPage(): number | undefined {
+    return this.currentPage;
+  }
 
   getZoomScale(): number { return this.zoom.current(); }
 
   // Toolbar button handlers
   zoomIn = () => {
-    this.zoom.zoomIn() && this.openCurrentPage();
+    this.zoom.zoomIn() && this.showPage(this.currentPage);
   };
 
   zoomOut = () => {
-    this.zoom.zoomOut() && this.openCurrentPage();
+    this.zoom.zoomOut() && this.showPage(this.currentPage);
   };
 
   zoomWidth = () => {
     this.zoom.setFitting(ZoomingMode.FIT_WIDTH);
-    this.openCurrentPage();
+      this.showPage(this.currentPage);
   };
 
   zoomPage = () => {
     this.zoom.setFitting(ZoomingMode.FIT_PAGE);
-    this.openCurrentPage();
+      this.showPage(this.currentPage);
   };
 
   zoomPreset(scale: number) {
     this.zoom.setPreset(scale);
-    this.openCurrentPage();
+      this.showPage(this.currentPage);
   }
 }
