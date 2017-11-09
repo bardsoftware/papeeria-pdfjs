@@ -288,7 +288,7 @@ export class PdfJsViewer {
   static getPresetScales(): number[] { return Zoom.ZOOM_FACTORS; }
 
   // These are from pdfjs library
-  loadedPages?: PDFPageViewStatic[] = [];
+  loadedPages: PDFPageViewStatic[] = [];
   numPages: number;
   currentFile?: PDF.PDFDocumentProxy;
   currentFileUrl?: string;
@@ -405,7 +405,7 @@ export class PdfJsViewer {
         if (this.currentPage > pdf.numPages) {
           this.currentPage = pdf.numPages;
         }
-        this.openPage(pdf, this.currentTask.page);
+        this.openPage(pdf, task.page);
       };
 
       const onDocumentFailure = (error: string) => {
@@ -488,21 +488,19 @@ export class PdfJsViewer {
   }
 
   resetCanvas() {
-    if (this.loadedPages.length != 0) {
-      for(let page of this.loadedPages){
-        page.destroy();
-      }
-      this.loadedPages = [];
-    }
+	  for (let page of this.loadedPages){
+		  page.destroy();
+	  }
+	  this.loadedPages = [];
     this.jqRoot.empty();
-    this.queue.clear();
+    this.queue.clear(); 
   }
 
   public showPage(page: number) {
-    if(page > this.numPages){
+    if (page > this.numPages){
       page = this.numPages;
     }
-    let pageWrapper = $("div").find(`[data-page-number='${page}']`)[0];
+    let pageWrapper = this.loadedPages.find(x => x.id === page).div;
     pageWrapper.scrollIntoView();
   }
 
@@ -525,17 +523,17 @@ export class PdfJsViewer {
   }
 
   pageUp = () => {
-      if (this.currentPage > 1) {
-          this.currentPage -= 1;
-          this.showPage(this.currentPage);
-      }
+    if (this.currentPage > 1) {
+      this.currentPage -= 1;
+      this.showPage(this.currentPage);
+    }
   };
 
   pageDown = () => {
-      if (this.currentFile && this.currentPage < this.currentFile.numPages) {
-          this.currentPage += 1;
-          this.showPage(this.currentPage);
-      }
+    if (this.currentFile && this.currentPage < this.currentFile.numPages) {
+      this.currentPage += 1;
+      this.showPage(this.currentPage);
+    }
   };
 
   getCurrentPage(): number | undefined {
@@ -555,16 +553,16 @@ export class PdfJsViewer {
 
   zoomWidth = () => {
     this.zoom.setFitting(ZoomingMode.FIT_WIDTH);
-      this.showPage(this.currentPage);
+    this.showPage(this.currentPage);
   };
 
   zoomPage = () => {
     this.zoom.setFitting(ZoomingMode.FIT_PAGE);
-      this.showPage(this.currentPage);
+    this.showPage(this.currentPage);
   };
 
   zoomPreset(scale: number) {
     this.zoom.setPreset(scale);
-      this.showPage(this.currentPage);
+    this.showPage(this.currentPage);
   }
 }

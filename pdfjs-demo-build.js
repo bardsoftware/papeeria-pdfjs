@@ -52066,7 +52066,7 @@ define('workspace/viewer/PdfJsViewer',["require", "exports", "pdf.combined", "pd
                     if (_this.currentPage > pdf.numPages) {
                         _this.currentPage = pdf.numPages;
                     }
-                    _this.openPage(pdf, _this.currentTask.page);
+                    _this.openPage(pdf, task_1.page);
                 };
                 var onDocumentFailure = function (error) {
                     _this.logger.error("Failed to fetch url=" + task_1.url + ", got error:" + error);
@@ -52147,13 +52147,11 @@ define('workspace/viewer/PdfJsViewer',["require", "exports", "pdf.combined", "pd
             });
         };
         PdfJsViewer.prototype.resetCanvas = function () {
-            if (this.loadedPages.length != 0) {
-                for (var _i = 0, _a = this.loadedPages; _i < _a.length; _i++) {
-                    var page = _a[_i];
-                    page.destroy();
-                }
-                this.loadedPages = [];
+            for (var _i = 0, _a = this.loadedPages; _i < _a.length; _i++) {
+                var page = _a[_i];
+                page.destroy();
             }
+            this.loadedPages = [];
             this.jqRoot.empty();
             this.queue.clear();
         };
@@ -52161,7 +52159,7 @@ define('workspace/viewer/PdfJsViewer',["require", "exports", "pdf.combined", "pd
             if (page > this.numPages) {
                 page = this.numPages;
             }
-            var pageWrapper = $("div").find("[data-page-number='" + page + "']")[0];
+            var pageWrapper = this.loadedPages.find(function (x) { return x.id === page; }).div;
             pageWrapper.scrollIntoView();
         };
         PdfJsViewer.prototype.resetPage = function () {
