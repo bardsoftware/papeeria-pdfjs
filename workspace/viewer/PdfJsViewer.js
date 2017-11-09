@@ -320,6 +320,9 @@ define(["require", "exports", "pdf.combined", "pdfjs-web/pdf_page_view", "pdfjs-
                 var onDocumentSuccess = function (pdf) {
                     _this.currentFile = pdf;
                     _this.currentFileUrl = task_1.url;
+                    if (_this.currentPage > pdf.numPages) {
+                        _this.currentPage = pdf.numPages;
+                    }
                     _this.openPage(pdf, _this.currentTask.page);
                 };
                 var onDocumentFailure = function (error) {

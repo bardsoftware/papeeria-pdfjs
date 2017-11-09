@@ -391,6 +391,9 @@ export class PdfJsViewer {
       const onDocumentSuccess = (pdf) => {
         this.currentFile = pdf;
         this.currentFileUrl = task.url;
+        if (this.currentPage > pdf.numPages) {
+          this.currentPage = pdf.numPages;
+        }
         this.openPage(pdf, this.currentTask.page);
       };
 
