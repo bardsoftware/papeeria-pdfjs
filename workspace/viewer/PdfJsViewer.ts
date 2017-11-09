@@ -497,6 +497,9 @@ export class PdfJsViewer {
   }
 
   public showPage(page: number) {
+    if (this.currentFile === undefined){
+      return;      
+    }
     if (page > this.currentFile.numPages){
       page = this.currentFile.numPages;
     }
