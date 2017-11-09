@@ -13,11 +13,12 @@ interface PDFPageViewStatic {
   new(options: any) : PDFPageViewStatic;
   destroy(): void;
 
-  setPdfPage(pdfPage: PDF.PDFPageProxy): void;
+  setPdfPage(pdfPage:  PDF.PDFPageProxy): void;
   draw(): any;
   update(scale: number, rotation?: number): void;
   updatePosition(): void;
 }
+
 // Interfaces for communication with other components
 // Logger logs message without attracting user attention
 interface Logger {
@@ -289,7 +290,6 @@ export class PdfJsViewer {
 
   // These are from pdfjs library
   loadedPages: PDFPageViewStatic[] = [];
-  numPages: number;
   currentFile?: PDF.PDFDocumentProxy;
   currentFileUrl?: string;
   currentPage: number = 0;
@@ -488,17 +488,17 @@ export class PdfJsViewer {
   }
 
   resetCanvas() {
-	  for (let page of this.loadedPages){
-		  page.destroy();
-	  }
-	  this.loadedPages = [];
+    for (let page of this.loadedPages){
+      page.destroy();
+    }
+    this.loadedPages = [];
     this.jqRoot.empty();
     this.queue.clear(); 
   }
 
   public showPage(page: number) {
-    if (page > this.numPages){
-      page = this.numPages;
+    if (page > this.currentFile.numPages){
+      page = this.currentFile.numPages;
     }
     let pageWrapper = this.loadedPages.find(x => x.id === page).div;
     pageWrapper.scrollIntoView();
