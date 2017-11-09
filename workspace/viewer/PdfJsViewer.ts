@@ -7,6 +7,17 @@ let PdfJsModule: any;
 let pdfjs: PDF.PDFJSStatic = PdfJsModule;
 let PDFPageView, TextLayerBuilder, PdfJsUtils: any;
 
+interface PDFPageViewStatic {
+  pdfPage: PDF.PDFPageProxy;
+
+  new(options: any) : PDFPageViewStatic;
+  destroy(): void;
+
+  setPdfPage(pdfPage: PDF.PDFPageProxy): void;
+  draw(): any;
+  update(scale: number, rotation?: number): void;
+  updatePosition(): void;
+}
 // Interfaces for communication with other components
 // Logger logs message without attracting user attention
 interface Logger {
@@ -277,7 +288,7 @@ export class PdfJsViewer {
   static getPresetScales(): number[] { return Zoom.ZOOM_FACTORS; }
 
   // These are from pdfjs library
-  loadedPages: any[] = [];
+  loadedPages?: PDFPageViewStatic[] = [];
   numPages: number;
   currentFile?: PDF.PDFDocumentProxy;
   currentFileUrl?: string;
@@ -415,7 +426,7 @@ export class PdfJsViewer {
         }
       }
       let scale = this.zoom.factor(page, this.jqRoot);
-      var pageView = new PDFPageView.PDFPageView({
+      let pageView = new PDFPageView.PDFPageView({
         container: this.jqRoot.get(0),
         id: pageNumber,
         scale: scale,
