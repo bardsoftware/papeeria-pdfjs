@@ -493,11 +493,12 @@ export class PdfJsViewer {
     this.loadedPages = [];
     this.jqRoot.empty();
     this.queue.clear(); 
+    this.currentFile = undefined;
   }
 
   public showPage(page: number) {
     if (this.currentFile === undefined){
-      return;      
+      return;
     }
     if (page > this.currentFile.numPages){
       page = this.currentFile.numPages;

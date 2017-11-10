@@ -52154,6 +52154,7 @@ define('workspace/viewer/PdfJsViewer',["require", "exports", "pdf.combined", "pd
             this.loadedPages = [];
             this.jqRoot.empty();
             this.queue.clear();
+            this.currentFile = undefined;
         };
         PdfJsViewer.prototype.showPage = function (page) {
             if (this.currentFile === undefined) {
