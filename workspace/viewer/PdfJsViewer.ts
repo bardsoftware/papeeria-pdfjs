@@ -12,7 +12,8 @@ interface PDFPageViewStatic {
 
   new(options: any) : PDFPageViewStatic;
   destroy(): void;
-  setPdfPage(pdfPage:  PDF.PDFPageProxy): void;
+
+  setPdfPage(pdfPage: PDF.PDFPageProxy): void;
   draw(): any;
   update(scale: number, rotation?: number): void;
   updatePosition(): void;
