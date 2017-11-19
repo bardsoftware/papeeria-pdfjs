@@ -52104,9 +52104,9 @@ define('workspace/viewer/PdfJsViewer',["require", "exports", "pdf.combined", "pd
                 pageView.update(scale);
                 pageView.setPdfPage(page);
                 var onDrawSuccess = function () {
+                    _this.positionCanvas(pageNumber);
                     _this.pageReady.invoke();
                     _this.stopRendering();
-                    _this.positionCanvas(pageNumber);
                     _this.completeTaskAndPullQueue(undefined);
                 };
                 var onDrawFailure = function (error) {
@@ -52149,8 +52149,8 @@ define('workspace/viewer/PdfJsViewer',["require", "exports", "pdf.combined", "pd
             var canvasOffset = canvas.position();
             var textLayer = parent.find(".textLayer");
             textLayer.css({
-                top: canvasOffset.top,
-                left: canvasOffset.left
+                top: canvasOffset.top + this.jqRoot.scrollTop(),
+                left: canvasOffset.left + this.jqRoot.scrollLeft()
             });
         };
         PdfJsViewer.prototype.resetCanvas = function () {

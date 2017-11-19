@@ -442,9 +442,9 @@ export class PdfJsViewer {
       pageView.update(scale);
       pageView.setPdfPage(page);
       const onDrawSuccess = () => {
+        this.positionCanvas(pageNumber);
         this.pageReady.invoke();
         this.stopRendering();
-        this.positionCanvas(pageNumber);
         this.completeTaskAndPullQueue(undefined)
       };
       const onDrawFailure = (error: string) => {
@@ -487,8 +487,8 @@ export class PdfJsViewer {
     const canvasOffset = canvas.position();
     const textLayer = parent.find(".textLayer");
     textLayer.css({
-      top : canvasOffset.top,
-      left : canvasOffset.left
+      top : canvasOffset.top + this.jqRoot.scrollTop(),
+      left : canvasOffset.left + this.jqRoot.scrollLeft()
     });
   }
 
