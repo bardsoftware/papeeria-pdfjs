@@ -504,7 +504,7 @@ export class PdfJsViewer {
       return;
     }
     if(pageNumber > this.currentFile.numPages){
-        pageNumber = this.currentFile.numPages;
+      pageNumber = this.currentFile.numPages;
     }
     let pageWrapper = this.loadedPages.filter(x => x.id === pageNumber)[0].div;
     pageWrapper.scrollIntoView();
