@@ -424,7 +424,7 @@ export class PdfJsViewer {
     const onPageSuccess = (page: any) => {
       if (this.currentTask) {
         if (this.currentTask.isResize) {
-          this.resetPage(pageNumber);
+          this.resetPage();
         }
       }
       let scale = this.zoom.factor(page, this.jqRoot);
@@ -510,7 +510,7 @@ export class PdfJsViewer {
     pageWrapper.scrollIntoView();
   }
 
-  private resetPage(pageNumber : number) {
+  private resetPage() {
     if (this.currentPage !== undefined) {
       this.zoom.onResize();
     }
