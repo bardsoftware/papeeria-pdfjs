@@ -8,8 +8,10 @@ let pdfjs: PDF.PDFJSStatic = PdfJsModule;
 let PDFPageView, TextLayerBuilder, PdfJsUtils: any;
 
 interface PDFPageViewStatic {
+  id: number;
+  div: HTMLElement;
   pdfPage: PDF.PDFPageProxy;
-
+  
   new(options: any) : PDFPageViewStatic;
   destroy(): void;
 
@@ -422,7 +424,7 @@ export class PdfJsViewer {
     const onPageSuccess = (page: any) => {
       if (this.currentTask) {
         if (this.currentTask.isResize) {
-          this.resetPage()
+          this.resetPage(pageNumber);
         }
       }
       let scale = this.zoom.factor(page, this.jqRoot);
@@ -497,18 +499,18 @@ export class PdfJsViewer {
     this.currentFile = undefined;
   }
 
-  public showPage(page: number) {
+  public showPage(pageNumber: number) {
     if (this.currentFile === undefined){
       return;
     }
-    if (page > this.currentFile.numPages){
-      page = this.currentFile.numPages;
+    if(pageNumber > this.currentFile.numPages){
+        pageNumber = this.currentFile.numPages;
     }
-    let pageWrapper = this.loadedPages.find(x => x.id === page).div;
+    let pageWrapper = this.loadedPages.filter(x => x.id === pageNumber)[0].div;
     pageWrapper.scrollIntoView();
   }
 
-  private resetPage() {
+  private resetPage(pageNumber : number) {
     if (this.currentPage !== undefined) {
       this.zoom.onResize();
     }

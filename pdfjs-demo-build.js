@@ -52082,7 +52082,7 @@ define('workspace/viewer/PdfJsViewer',["require", "exports", "pdf.combined", "pd
             var onPageSuccess = function (page) {
                 if (_this.currentTask) {
                     if (_this.currentTask.isResize) {
-                        _this.resetPage();
+                        _this.resetPage(pageNumber);
                     }
                 }
                 var scale = _this.zoom.factor(page, _this.jqRoot);
@@ -52156,17 +52156,17 @@ define('workspace/viewer/PdfJsViewer',["require", "exports", "pdf.combined", "pd
             this.queue.clear();
             this.currentFile = undefined;
         };
-        PdfJsViewer.prototype.showPage = function (page) {
+        PdfJsViewer.prototype.showPage = function (pageNumber) {
             if (this.currentFile === undefined) {
                 return;
             }
-            if (page > this.currentFile.numPages) {
-                page = this.currentFile.numPages;
+            if (pageNumber > this.currentFile.numPages) {
+                pageNumber = this.currentFile.numPages;
             }
-            var pageWrapper = this.loadedPages.find(function (x) { return x.id === page; }).div;
+            var pageWrapper = this.loadedPages.filter(function (x) { return x.id === pageNumber; })[0].div;
             pageWrapper.scrollIntoView();
         };
-        PdfJsViewer.prototype.resetPage = function () {
+        PdfJsViewer.prototype.resetPage = function (pageNumber) {
             if (this.currentPage !== undefined) {
                 this.zoom.onResize();
             }
