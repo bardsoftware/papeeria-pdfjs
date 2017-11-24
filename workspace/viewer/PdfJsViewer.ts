@@ -440,8 +440,8 @@ export class PdfJsViewer {
       let scale = this.zoom.factor(page, this.jqRoot);
       let pageView;
       if (this.currentTask.isResize) {
-        this.resetPage();
         pageView = this.findPageView(pageNumber);
+        pageView.update(scale);
       } else {
         pageView = new PDFPageView.PDFPageView({
           container: this.jqRoot.get(0),
@@ -451,9 +451,9 @@ export class PdfJsViewer {
           textLayerFactory: this.textLayerFactory
         })
         this.loadedPages.push(pageView);
+        pageView.update(scale);
+        pageView.setPdfPage(page);
       }
-      pageView.update(scale);
-      pageView.setPdfPage(page);
       const onDrawSuccess = () => {
         this.positionCanvas(pageNumber);
         this.pageReady.invoke();
@@ -526,12 +526,6 @@ export class PdfJsViewer {
     }
   }
 
-  private resetPage() {
-    if (this.currentPage !== undefined) {
-      this.zoom.onResize();
-    }
-  }
-
   private findPageView(pageNumber: number): PDFPageViewStatic | undefined {
     if (!this.currentFile) {
       return undefined;
@@ -593,16 +587,22 @@ export class PdfJsViewer {
 
   zoomWidth = () => {
     this.zoom.setFitting(ZoomingMode.FIT_WIDTH);
-    this.showPage(this.currentPage);
+    if (this.currentFileUrl) {
+      this.showAll(this.currentFileUrl, true);
+    }
   };
 
   zoomPage = () => {
     this.zoom.setFitting(ZoomingMode.FIT_PAGE);
-    this.showPage(this.currentPage);
+    if (this.currentFileUrl) {
+      this.showAll(this.currentFileUrl, true);
+    }
   };
 
   zoomPreset(scale: number) {
     this.zoom.setPreset(scale);
-    this.showPage(this.currentPage);
+    if (this.currentFileUrl) {
+      this.showAll(this.currentFileUrl, true);
+    }
   }
 }
