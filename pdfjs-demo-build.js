@@ -51998,7 +51998,9 @@ define('workspace/viewer/PdfJsViewer',["require", "exports", "pdf.combined", "pd
                 }
             });
         }
-        PdfJsViewer.getPresetScales = function () { return Zoom.ZOOM_FACTORS; };
+        PdfJsViewer.getPresetScales = function () {
+            return Zoom.ZOOM_FACTORS;
+        };
         PdfJsViewer.prototype.processEvent = function (e, negativeAction, positiveAction) {
             var delta = normalize_mousewheel(e);
             if (delta < -this.effectiveThreshold) {
@@ -52087,12 +52089,13 @@ define('workspace/viewer/PdfJsViewer',["require", "exports", "pdf.combined", "pd
                     return false;
                 }
                 var scale = _this.zoom.factor(page, _this.jqRoot);
+                var pageView;
                 if (_this.currentTask.isResize) {
                     _this.resetPage();
-                    var pageView = _this.findPageView(pageNumber);
+                    pageView = _this.findPageView(pageNumber);
                 }
                 else {
-                    var pageView = new PDFPageView.PDFPageView({
+                    pageView = new PDFPageView.PDFPageView({
                         container: _this.jqRoot.get(0),
                         id: pageNumber,
                         scale: scale,
@@ -52190,7 +52193,9 @@ define('workspace/viewer/PdfJsViewer',["require", "exports", "pdf.combined", "pd
         PdfJsViewer.prototype.addOnPageReady = function (callback) {
             this.pageReady.add(callback);
         };
-        PdfJsViewer.prototype.getRootElement = function () { return this.jqRoot; };
+        PdfJsViewer.prototype.getRootElement = function () {
+            return this.jqRoot;
+        };
         PdfJsViewer.prototype.onResize = function () {
             if (this.currentFile) {
                 this.showPage(this.currentPage);
@@ -52199,7 +52204,9 @@ define('workspace/viewer/PdfJsViewer',["require", "exports", "pdf.combined", "pd
         PdfJsViewer.prototype.getCurrentPage = function () {
             return this.currentPage;
         };
-        PdfJsViewer.prototype.getZoomScale = function () { return this.zoom.current(); };
+        PdfJsViewer.prototype.getZoomScale = function () {
+            return this.zoom.current();
+        };
         PdfJsViewer.prototype.zoomPreset = function (scale) {
             this.zoom.setPreset(scale);
             this.showPage(this.currentPage);

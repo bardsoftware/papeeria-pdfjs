@@ -11,13 +11,17 @@ interface PDFPageViewStatic {
   id: number;
   div: HTMLElement;
   pdfPage: PDF.PDFPageProxy;
-  
-  new(options: any) : PDFPageViewStatic;
+
+  new(options: any): PDFPageViewStatic;
+
   destroy(): void;
 
   setPdfPage(pdfPage: PDF.PDFPageProxy): void;
+
   draw(): any;
+
   update(scale: number, rotation?: number): void;
+
   updatePosition(): void;
 }
 
@@ -43,15 +47,15 @@ interface I18N {
 }
 
 function fallbackRequestAnimationFrame(callback: any, element: any) {
-  window.setTimeout(callback, 1000/60);
+  window.setTimeout(callback, 1000 / 60);
 }
 
 if (!window.requestAnimationFrame) {
   window.requestAnimationFrame = window.webkitRequestAnimationFrame ||
-      window.mozRequestAnimationFrame ||
-      window.oRequestAnimationFrame ||
-      window.msRequestAnimationFrame ||
-      fallbackRequestAnimationFrame;
+    window.mozRequestAnimationFrame ||
+    window.oRequestAnimationFrame ||
+    window.msRequestAnimationFrame ||
+    fallbackRequestAnimationFrame;
   pdfjs.disableStream = true;
 }
 
@@ -72,10 +76,11 @@ class Zoom {
   private idxPresetScale = 0;
   // Dynamically calculated scale which is used when mode is FIT*
   private fittingScale?: number = undefined;
+
   // Returns currently used scale in percents for display purposes
   current(): number {
     return Math.round(100 * (
-        this.mode == ZoomingMode.PRESET ? Zoom.ZOOM_FACTORS[this.idxPresetScale] : this.fittingScale || 1));
+      this.mode == ZoomingMode.PRESET ? Zoom.ZOOM_FACTORS[this.idxPresetScale] : this.fittingScale || 1));
   }
 
   // Returns currently set zoom factor if preset mode is used or recalculates
@@ -127,6 +132,7 @@ class Zoom {
     }
     return false;
   }
+
   // Zooms out. If we already use preset then we only need to decrease index. If we use fitting scale
   // then we search for the closest lesser preset scale.
   zoomOut(): boolean {
@@ -259,7 +265,7 @@ function normalize_mousewheel(e: JQueryMouseEventObject): number {
   let o = e.originalEvent as MouseWheelEvent;
   let w = o.wheelDelta;
   let n = 225;
-  let n1 = n-1;
+  let n1 = n - 1;
 
   let detail = o.detail;
   // Normalize delta
@@ -273,11 +279,14 @@ function normalize_mousewheel(e: JQueryMouseEventObject): number {
 }
 
 type Callback = (...args) => void;
+
 class CallbacksList {
   private readonly callbacks: Callback[] = [];
+
   add(cb: Callback) {
     this.callbacks.push(cb);
   }
+
   invoke(...args) {
     const context = this;
     for (let cb of this.callbacks) {
@@ -288,7 +297,9 @@ class CallbacksList {
 
 export class PdfJsViewer {
 
-  static getPresetScales(): number[] { return Zoom.ZOOM_FACTORS; }
+  static getPresetScales(): number[] {
+    return Zoom.ZOOM_FACTORS;
+  }
 
   // These are from pdfjs library
   loadedPages: PDFPageViewStatic[] = [];
@@ -307,7 +318,7 @@ export class PdfJsViewer {
   private readonly queue = new Queue();
   private readonly pageReady = new CallbacksList();
   private readonly textLayerFactory = {
-    createTextLayerBuilder: function(div: any, page: any, viewport: any) {
+    createTextLayerBuilder: function (div: any, page: any, viewport: any) {
       return new TextLayerBuilder.TextLayerBuilder({
         textLayerDiv: div,
         pageIndex: page,
@@ -375,13 +386,14 @@ export class PdfJsViewer {
     }
   }
 
-  public showAll(url: string, isResize: boolean = false){
+  public showAll(url: string, isResize: boolean = false) {
     pdfjs.getDocument(url).then((pdf) => {
-      for(let i = 1; i <= pdf.numPages; i++){
+      for (let i = 1; i <= pdf.numPages; i++) {
         this.show(url, i, isResize);
       }
     })
   }
+
   // This method completes current task. It pulls the queue if queue is not empty, otherwise it
   // shows error message if defined. Thus, should any step of task processing fail, we'll show error unless
   // we have more tasks.
@@ -426,11 +438,12 @@ export class PdfJsViewer {
         return false;
       }
       let scale = this.zoom.factor(page, this.jqRoot);
+      let pageView;
       if (this.currentTask.isResize) {
         this.resetPage();
-        let pageView = this.findPageView(pageNumber);
+        pageView = this.findPageView(pageNumber);
       } else {
-        let pageView = new PDFPageView.PDFPageView({
+        pageView = new PDFPageView.PDFPageView({
           container: this.jqRoot.get(0),
           id: pageNumber,
           scale: scale,
@@ -487,29 +500,29 @@ export class PdfJsViewer {
     const canvasOffset = canvas.position();
     const textLayer = parent.find(".textLayer");
     textLayer.css({
-      top : canvasOffset.top + this.jqRoot.scrollTop(),
-      left : canvasOffset.left + this.jqRoot.scrollLeft()
+      top: canvasOffset.top + this.jqRoot.scrollTop(),
+      left: canvasOffset.left + this.jqRoot.scrollLeft()
     });
   }
 
   resetCanvas() {
-    for (let page of this.loadedPages){
+    for (let page of this.loadedPages) {
       page.destroy();
     }
     this.loadedPages = [];
     this.jqRoot.empty();
-    this.queue.clear(); 
+    this.queue.clear();
     this.currentFile = undefined;
     this.currentFileUrl = undefined;
   }
 
   public showPage(pageNumber: number) {
-    if (this.currentFile === undefined){
+    if (this.currentFile === undefined) {
       return;
     }
     let pageView = this.findPageView(pageNumber);
-    if (pageView){
-      pageView.div.scrollIntoView();  
+    if (pageView) {
+      pageView.div.scrollIntoView();
     }
   }
 
@@ -519,11 +532,11 @@ export class PdfJsViewer {
     }
   }
 
-  private findPageView(pageNumber: number) : PDFPageViewStatic | undefined {
-    if(!this.currentFile){
+  private findPageView(pageNumber: number): PDFPageViewStatic | undefined {
+    if (!this.currentFile) {
       return undefined;
     }
-    if(pageNumber > this.currentFile.numPages){
+    if (pageNumber > this.currentFile.numPages) {
       pageNumber = this.currentFile.numPages;
     }
     return this.loadedPages.filter(x => x.id === pageNumber)[0];
@@ -533,7 +546,9 @@ export class PdfJsViewer {
     this.pageReady.add(callback);
   }
 
-  getRootElement(): JQuery { return this.jqRoot; }
+  getRootElement(): JQuery {
+    return this.jqRoot;
+  }
 
   onResize() {
     if (this.currentFile) {
@@ -559,18 +574,20 @@ export class PdfJsViewer {
     return this.currentPage;
   }
 
-  getZoomScale(): number { return this.zoom.current(); }
+  getZoomScale(): number {
+    return this.zoom.current();
+  }
 
   // Toolbar button handlers
   zoomIn = () => {
-    if (this.currentFileUrl){
-      this.zoom.zoomIn() && this.showAll(this.currentFileUrl, true);  
+    if (this.currentFileUrl) {
+      this.zoom.zoomIn() && this.showAll(this.currentFileUrl, true);
     }
   };
 
   zoomOut = () => {
-    if (this.currentFileUrl){
-      this.zoom.zoomOut() && this.showAll(this.currentFileUrl, true);  
+    if (this.currentFileUrl) {
+      this.zoom.zoomOut() && this.showAll(this.currentFileUrl, true);
     }
   };
 
