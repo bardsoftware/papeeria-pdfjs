@@ -437,11 +437,13 @@ export class PdfJsViewer {
       if (!this.currentTask) {
         return false;
       }
+      if(this.currentTask.isResize){
+        this.resetPage();
+      }
       let scale = this.zoom.factor(page, this.jqRoot);
       let pageView;
       if (this.currentTask.isResize) {
         pageView = this.findPageView(pageNumber);
-        pageView.update(scale);
       } else {
         pageView = new PDFPageView.PDFPageView({
           container: this.jqRoot.get(0),
@@ -451,9 +453,9 @@ export class PdfJsViewer {
           textLayerFactory: this.textLayerFactory
         })
         this.loadedPages.push(pageView);
-        pageView.update(scale);
         pageView.setPdfPage(page);
       }
+      pageView.update(scale);
       const onDrawSuccess = () => {
         this.positionCanvas(pageNumber);
         this.pageReady.invoke();
@@ -534,6 +536,12 @@ export class PdfJsViewer {
       pageNumber = this.currentFile.numPages;
     }
     return this.loadedPages.filter(x => x.id === pageNumber)[0];
+  }
+
+  private resetPage() {
+    if (this.currentPage !== undefined) {
+      this.zoom.onResize();
+    }
   }
 
   addOnPageReady(callback: any) {

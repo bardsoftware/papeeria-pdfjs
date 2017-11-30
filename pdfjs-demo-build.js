@@ -52092,11 +52092,13 @@ define('workspace/viewer/PdfJsViewer',["require", "exports", "pdf.combined", "pd
                 if (!_this.currentTask) {
                     return false;
                 }
+                if (_this.currentTask.isResize) {
+                    _this.resetPage();
+                }
                 var scale = _this.zoom.factor(page, _this.jqRoot);
                 var pageView;
                 if (_this.currentTask.isResize) {
                     pageView = _this.findPageView(pageNumber);
-                    pageView.update(scale);
                 }
                 else {
                     pageView = new PDFPageView.PDFPageView({
@@ -52107,9 +52109,9 @@ define('workspace/viewer/PdfJsViewer',["require", "exports", "pdf.combined", "pd
                         textLayerFactory: _this.textLayerFactory
                     });
                     _this.loadedPages.push(pageView);
-                    pageView.update(scale);
                     pageView.setPdfPage(page);
                 }
+                pageView.update(scale);
                 var onDrawSuccess = function () {
                     _this.positionCanvas(pageNumber);
                     _this.pageReady.invoke();
@@ -52188,6 +52190,11 @@ define('workspace/viewer/PdfJsViewer',["require", "exports", "pdf.combined", "pd
                 pageNumber = this.currentFile.numPages;
             }
             return this.loadedPages.filter(function (x) { return x.id === pageNumber; })[0];
+        };
+        PdfJsViewer.prototype.resetPage = function () {
+            if (this.currentPage !== undefined) {
+                this.zoom.onResize();
+            }
         };
         PdfJsViewer.prototype.addOnPageReady = function (callback) {
             this.pageReady.add(callback);
