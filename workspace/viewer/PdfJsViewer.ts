@@ -437,7 +437,7 @@ export class PdfJsViewer {
       if (!this.currentTask) {
         return false;
       }
-      if(this.currentTask.isResize){
+      if (this.currentTask.isResize) {
         this.resetPage();
       }
       let scale = this.zoom.factor(page, this.jqRoot);
@@ -451,7 +451,7 @@ export class PdfJsViewer {
           scale: scale,
           defaultViewport: page.getViewport(1),
           textLayerFactory: this.textLayerFactory
-        })
+        });
         this.loadedPages.push(pageView);
         pageView.setPdfPage(page);
       }
@@ -553,8 +553,8 @@ export class PdfJsViewer {
   }
 
   onResize() {
-    if (this.currentFile) {
-      this.showPage(this.currentPage);
+    if (this.currentFile && this.currentFileUrl) {
+      this.showAll(this.currentFileUrl, true);
     }
   }
 

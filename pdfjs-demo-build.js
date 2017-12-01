@@ -52203,8 +52203,8 @@ define('workspace/viewer/PdfJsViewer',["require", "exports", "pdf.combined", "pd
             return this.jqRoot;
         };
         PdfJsViewer.prototype.onResize = function () {
-            if (this.currentFile) {
-                this.showPage(this.currentPage);
+            if (this.currentFile && this.currentFileUrl) {
+                this.showAll(this.currentFileUrl, true);
             }
         };
         PdfJsViewer.prototype.getCurrentPage = function () {
