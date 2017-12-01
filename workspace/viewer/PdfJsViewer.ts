@@ -583,34 +583,28 @@ export class PdfJsViewer {
   // Toolbar button handlers
   zoomIn = () => {
     if (this.currentFileUrl) {
-      this.zoom.zoomIn() && this.showAll(this.currentFileUrl, true);
+      this.zoom.zoomIn() && this.onResize();
     }
   };
 
   zoomOut = () => {
     if (this.currentFileUrl) {
-      this.zoom.zoomOut() && this.showAll(this.currentFileUrl, true);
+      this.zoom.zoomOut() && this.onResize();
     }
   };
 
   zoomWidth = () => {
     this.zoom.setFitting(ZoomingMode.FIT_WIDTH);
-    if (this.currentFileUrl) {
-      this.showAll(this.currentFileUrl, true);
-    }
+    this.onResize();
   };
 
   zoomPage = () => {
     this.zoom.setFitting(ZoomingMode.FIT_PAGE);
-    if (this.currentFileUrl) {
-      this.showAll(this.currentFileUrl, true);
-    }
+    this.onResize();
   };
 
   zoomPreset(scale: number) {
     this.zoom.setPreset(scale);
-    if (this.currentFileUrl) {
-      this.showAll(this.currentFileUrl, true);
-    }
+    this.onResize();
   }
 }

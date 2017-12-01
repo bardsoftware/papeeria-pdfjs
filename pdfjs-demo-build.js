@@ -51971,25 +51971,21 @@ define('workspace/viewer/PdfJsViewer',["require", "exports", "pdf.combined", "pd
             };
             this.zoomIn = function () {
                 if (_this.currentFileUrl) {
-                    _this.zoom.zoomIn() && _this.showAll(_this.currentFileUrl, true);
+                    _this.zoom.zoomIn() && _this.onResize();
                 }
             };
             this.zoomOut = function () {
                 if (_this.currentFileUrl) {
-                    _this.zoom.zoomOut() && _this.showAll(_this.currentFileUrl, true);
+                    _this.zoom.zoomOut() && _this.onResize();
                 }
             };
             this.zoomWidth = function () {
                 _this.zoom.setFitting(ZoomingMode.FIT_WIDTH);
-                if (_this.currentFileUrl) {
-                    _this.showAll(_this.currentFileUrl, true);
-                }
+                _this.onResize();
             };
             this.zoomPage = function () {
                 _this.zoom.setFitting(ZoomingMode.FIT_PAGE);
-                if (_this.currentFileUrl) {
-                    _this.showAll(_this.currentFileUrl, true);
-                }
+                _this.onResize();
             };
             this.zoom.setFitting(ZoomingMode.FIT_PAGE);
             jqRoot.unbind("wheel.pdfjs").bind("wheel.pdfjs", function (e) {
@@ -52215,9 +52211,7 @@ define('workspace/viewer/PdfJsViewer',["require", "exports", "pdf.combined", "pd
         };
         PdfJsViewer.prototype.zoomPreset = function (scale) {
             this.zoom.setPreset(scale);
-            if (this.currentFileUrl) {
-                this.showAll(this.currentFileUrl, true);
-            }
+            this.onResize();
         };
         return PdfJsViewer;
     }());
