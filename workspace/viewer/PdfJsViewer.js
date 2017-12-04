@@ -1,9 +1,7 @@
 define(["require", "exports", "pdf.combined", "pdfjs-web/pdf_page_view", "pdfjs-web/text_layer_builder", "pdfjs-web/ui_utils"], function (require, exports, PdfJsModule, PDFPageView, TextLayerBuilder, PdfJsUtils) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
-    var PdfJsModule;
     var pdfjs = PdfJsModule;
-    var PDFPageView, TextLayerBuilder, PdfJsUtils;
     function fallbackRequestAnimationFrame(callback, element) {
         window.setTimeout(callback, 1000 / 60);
     }
@@ -34,7 +32,7 @@ define(["require", "exports", "pdf.combined", "pdfjs-web/pdf_page_view", "pdfjs-
             };
         }
         Zoom.prototype.current = function () {
-            return Math.round(100 * (this.mode == ZoomingMode.PRESET ? Zoom.ZOOM_FACTORS[this.idxPresetScale] : this.fittingScale || 1));
+            return Math.round(100 * (this.mode === ZoomingMode.PRESET ? Zoom.ZOOM_FACTORS[this.idxPresetScale] : this.fittingScale || 1));
         };
         Zoom.prototype.factor = function (page, container) {
             var value;
@@ -110,9 +108,9 @@ define(["require", "exports", "pdf.combined", "pdfjs-web/pdf_page_view", "pdfjs-
                 this.mode = ZoomingMode.PRESET;
             }
         };
+        Zoom.ZOOM_FACTORS = [0.25, 0.33, 0.5, 0.66, 0.75, 0.9, 1.0, 1.25, 1.5, 2.0, 4.0];
         return Zoom;
     }());
-    Zoom.ZOOM_FACTORS = [0.25, 0.33, 0.5, 0.66, 0.75, 0.9, 1.0, 1.25, 1.5, 2.0, 4.0];
     var Queue = (function () {
         function Queue() {
             this.tasks = [];
@@ -122,10 +120,10 @@ define(["require", "exports", "pdf.combined", "pdfjs-web/pdf_page_view", "pdfjs-
             var isNewFile = true;
             var lastTask = this.isEmpty() ? this.lastCompleted : this.tasks[this.tasks.length - 1];
             if (lastTask) {
-                if (lastTask.url == url && lastTask.page == page && lastTask.isResize == isResize) {
+                if (lastTask.url === url && lastTask.page === page && lastTask.isResize === isResize) {
                     return;
                 }
-                isNewFile = (lastTask.mainFileId != mainFileId);
+                isNewFile = (lastTask.mainFileId !== mainFileId);
             }
             var task = {
                 url: url,
@@ -165,7 +163,7 @@ define(["require", "exports", "pdf.combined", "pdfjs-web/pdf_page_view", "pdfjs-
         var n = 225;
         var n1 = n - 1;
         var detail = o.detail;
-        var delta = (!detail) ? w / 120 : (w && w / detail != 0) ? detail / (w / detail) : -detail / 1.35;
+        var delta = (!detail) ? w / 120 : (w && w / detail !== 0) ? detail / (w / detail) : -detail / 1.35;
         if (Math.abs(delta) > 1) {
             delta = (delta > 0 ? 1 : -1) * (Math.pow(delta, 2) + n1) / n;
         }
@@ -191,14 +189,53 @@ define(["require", "exports", "pdf.combined", "pdfjs-web/pdf_page_view", "pdfjs-
         };
         return CallbacksList;
     }());
+    var CachingDataSource = (function () {
+        function CachingDataSource() {
+            this.cache = {};
+        }
+        CachingDataSource.prototype.get = function (url) {
+            var cached = this.cache[url];
+            var deferred = $.Deferred();
+            if (cached) {
+                return deferred.resolve(cached);
+            }
+            var xhr = new XMLHttpRequest();
+            xhr.open("GET", url, true);
+            xhr.responseType = "arraybuffer";
+            xhr.onload = this.newOnload(xhr, url, deferred);
+            xhr.send();
+            return deferred;
+        };
+        CachingDataSource.prototype.newOnload = function (xhr, url, deferred) {
+            var _this = this;
+            return function () {
+                if (xhr.status === 200) {
+                    var uintArray = new Uint8Array(xhr.response);
+                    _this.cache[url] = uintArray;
+                    deferred.resolve(uintArray);
+                }
+                else {
+                    deferred.reject(xhr.status);
+                }
+            };
+        };
+        CachingDataSource.prototype.clear = function (url) {
+            delete this.cache[url];
+        };
+        return CachingDataSource;
+    }());
+    exports.CachingDataSource = CachingDataSource;
+    var DEFAULT_DATA_SOURCE = function (url) { return $.Deferred().resolve(url); };
     var PdfJsViewer = (function () {
-        function PdfJsViewer(jqRoot, alert, logger, utils, i18n) {
+        function PdfJsViewer(jqRoot, alert, logger, utils, i18n, dataSource) {
+            if (dataSource === void 0) { dataSource = DEFAULT_DATA_SOURCE; }
             var _this = this;
             this.jqRoot = jqRoot;
             this.alert = alert;
             this.logger = logger;
             this.utils = utils;
             this.i18n = i18n;
+            this.dataSource = dataSource;
             this.currentPage = 0;
             this.effectiveThreshold = THRESHOLD_INITIAL;
             this.zoom = new Zoom();
@@ -227,10 +264,14 @@ define(["require", "exports", "pdf.combined", "pdfjs-web/pdf_page_view", "pdfjs-
                 }
             };
             this.zoomIn = function () {
-                _this.zoom.zoomIn() && _this.openCurrentPage();
+                if (_this.zoom.zoomIn()) {
+                    _this.openCurrentPage();
+                }
             };
             this.zoomOut = function () {
-                _this.zoom.zoomOut() && _this.openCurrentPage();
+                if (_this.zoom.zoomOut()) {
+                    _this.openCurrentPage();
+                }
             };
             this.zoomWidth = function () {
                 _this.zoom.setFitting(ZoomingMode.FIT_WIDTH);
@@ -311,21 +352,35 @@ define(["require", "exports", "pdf.combined", "pdfjs-web/pdf_page_view", "pdfjs-
                 }
                 this.currentTask = task_1;
                 this.currentPage = task_1.page;
-                var onDocumentSuccess = function (pdf) {
-                    _this.currentFile = pdf;
-                    _this.currentFileUrl = task_1.url;
-                    if (_this.currentPage > pdf.numPages) {
-                        _this.currentPage = pdf.numPages;
+                this.dataSource(task_1.url)
+                    .then(function (document) {
+                    if (document) {
+                        _this.loadDocument(task_1, document);
                     }
-                    _this.openPage(pdf, _this.currentPage);
-                };
-                var onDocumentFailure = function (error) {
-                    _this.logger.error("Failed to fetch url=" + task_1.url + ", got error:" + error);
-                    _this.stopRendering();
-                    _this.completeTaskAndPullQueue(_this.i18n.text("js.pdfjs.failure.document", error));
-                };
-                this.startRendering();
-                pdfjs.getDocument(task_1.url).then(onDocumentSuccess, onDocumentFailure);
+                });
+            }
+        };
+        PdfJsViewer.prototype.loadDocument = function (task, document) {
+            var _this = this;
+            var onDocumentSuccess = function (pdf) {
+                _this.currentFile = pdf;
+                _this.currentFileUrl = task.url;
+                if (_this.currentPage > pdf.numPages) {
+                    _this.currentPage = pdf.numPages;
+                }
+                _this.openPage(pdf, _this.currentPage);
+            };
+            var onDocumentFailure = function (error) {
+                _this.logger.error("Failed to fetch url=" + task.url + ", got error:" + error);
+                _this.stopRendering();
+                _this.completeTaskAndPullQueue(_this.i18n.text("js.pdfjs.failure.document", error));
+            };
+            this.startRendering();
+            if (typeof document === "string") {
+                pdfjs.getDocument(document).then(onDocumentSuccess, onDocumentFailure);
+            }
+            else {
+                pdfjs.getDocument(document).then(onDocumentSuccess, onDocumentFailure);
             }
         };
         PdfJsViewer.prototype.openPage = function (pdfFile, pageNumber) {
