@@ -352,7 +352,7 @@ export class PdfJsViewer {
   loadedPages: PDFPageViewStatic[] = [];
   currentFile?: PDF.PDFDocumentProxy;
   currentFileUrl?: string;
-  currentPage: number = 0;
+  currentPage: number = 1;
   currentTask: PageTask | undefined;
   // Some magic to handle weird touchpad events which send delta exceeding the threshold a few times in a row.
   // Dynamic threshold basically cuts some scrolling events depending on the scroll delta value.
@@ -462,7 +462,6 @@ export class PdfJsViewer {
         this.zoom.onResize();
       }
       this.currentTask = task;
-      this.currentPage = task.page;
       this.dataSource(task.url)
           .then(document => {
             if (document) {
