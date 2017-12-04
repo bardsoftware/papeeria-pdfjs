@@ -4,14 +4,11 @@
 /// <amd-dependency path="pdfjs-web/pdf_page_view" name="PDFPageView"/>
 /// <amd-dependency path="pdfjs-web/text_layer_builder" name="TextLayerBuilder"/>
 /// <amd-dependency path="pdfjs-web/ui_utils" name="PdfJsUtils"/>
+/// <reference path="../../papeeria-global.d.ts"/>
 
 declare const PdfJsModule: any;
 declare const PDFPageView, TextLayerBuilder, PdfJsUtils: any;
 const pdfjs: PDF.PDFJSStatic = PdfJsModule;
-
-interface MutableMap<T> {
-  [key: string]: T;
-}
 
 interface PDFPageViewStatic {
   pdfPage: PDF.PDFPageProxy;
