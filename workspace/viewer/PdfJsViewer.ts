@@ -7,6 +7,17 @@ let PdfJsModule: any;
 let pdfjs: PDF.PDFJSStatic = PdfJsModule;
 let PDFPageView, TextLayerBuilder, PdfJsUtils: any;
 
+interface PDFPageViewStatic {
+  pdfPage: PDF.PDFPageProxy;
+
+  new(options: any) : PDFPageViewStatic;
+  destroy(): void;
+
+  setPdfPage(pdfPage: PDF.PDFPageProxy): void;
+  draw(): any;
+  update(scale: number, rotation?: number): void;
+  updatePosition(): void;
+}
 // Interfaces for communication with other components
 // Logger logs message without attracting user attention
 interface Logger {
@@ -277,7 +288,7 @@ export class PdfJsViewer {
   static getPresetScales(): number[] { return Zoom.ZOOM_FACTORS; }
 
   // These are from pdfjs library
-  pdfPageView: any;
+  pdfPageView?: PDFPageViewStatic;
   currentFile?: PDF.PDFDocumentProxy;
   currentFileUrl?: string;
   currentPage: number = 0;
@@ -416,16 +427,20 @@ export class PdfJsViewer {
         }
       }
       let scale = this.zoom.factor(page, this.jqRoot);
-      var pageView = new PDFPageView.PDFPageView({
-        container: this.jqRoot.get(0),
-        id: pageNumber,
-        scale: scale,
-        defaultViewport: page.getViewport(1),
-        textLayerFactory: this.textLayerFactory
-      })
-      this.pdfPageView.push(pageView);
-      pageView.update(scale);
-      pageView.setPdfPage(page);
+      if (!this.pdfPageView) {
+        this.pdfPageView = new PDFPageView.PDFPageView({
+          container: this.jqRoot.get(0),
+          id: pageNumber,
+          scale: scale,
+          defaultViewport: page.getViewport(1),
+          textLayerFactory: this.textLayerFactory
+        })
+      }
+      if (!this.pdfPageView) {
+        return;
+      }
+      this.pdfPageView.update(scale);
+      this.pdfPageView.setPdfPage(page);
       const onDrawSuccess = () => {
         this.positionCanvas(pageNumber);
         this.pageReady.invoke();
