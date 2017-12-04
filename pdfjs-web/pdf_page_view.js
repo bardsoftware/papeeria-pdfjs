@@ -221,7 +221,6 @@ var PDFPageView = (function PDFPageViewClosure() {
         }
         if (!this.zoomLayer) {
           this.zoomLayer = this.canvas.parentNode;
-          this.zoomLayer.style.position = 'absolute';
         }
       }
       if (this.zoomLayer) {
