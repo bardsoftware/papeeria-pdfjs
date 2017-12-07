@@ -14,6 +14,7 @@ interface PDFPageViewStatic {
   id: number;
   div: HTMLElement;
   pdfPage: PDF.PDFPageProxy;
+  renderingState: number;
 
   new(options: any): PDFPageViewStatic;
 
@@ -69,6 +70,13 @@ enum ZoomingMode {
   FIT_PAGE
 }
 
+let RenderingStates = {
+  INITIAL: 0,
+  RUNNING: 1,
+  PAUSED: 2,
+  FINISHED: 3
+};
+
 // This class is responsible for storing current value of zoom factor and recalculating it
 // in response to user actions.
 class Zoom {
@@ -84,7 +92,7 @@ class Zoom {
   // Returns currently used scale in percents for display purposes
   current(): number {
     return Math.round(100 * (
-        this.mode === ZoomingMode.PRESET ? Zoom.ZOOM_FACTORS[this.idxPresetScale] : this.fittingScale || 1
+      this.mode === ZoomingMode.PRESET ? Zoom.ZOOM_FACTORS[this.idxPresetScale] : this.fittingScale || 1
     ));
   }
 
@@ -197,6 +205,7 @@ interface PageTask {
   isResize: boolean;
   // Identifier of the shown PDF file
   mainFileId: string | undefined;
+
   // Function which is called on task completion
   complete(): void;
 }
@@ -207,7 +216,6 @@ interface PageTask {
 class Queue {
   // We keep a reference to the last completed task to be able to skip tasks which need no re-rendering
   lastCompleted: PageTask | undefined;
-
   // task queue
   private tasks: MutableList<PageTask> = [];
 
@@ -354,6 +362,7 @@ export class PdfJsViewer {
   currentFileUrl?: string;
   currentPage: number = 1;
   currentTask: PageTask | undefined;
+  scroll: any = PdfJsUtils.watchScroll(this.getRootElement()[0], this.scrollUpdate.bind(this));
   // Some magic to handle weird touchpad events which send delta exceeding the threshold a few times in a row.
   // Dynamic threshold basically cuts some scrolling events depending on the scroll delta value.
   // Effective threshold will grow and shrink by THRESHOLD_FACTOR as it is hit,
@@ -393,7 +402,9 @@ export class PdfJsViewer {
     });
   }
 
-  static getPresetScales(): List<number> { return Zoom.ZOOM_FACTORS; }
+  static getPresetScales(): List<number> {
+    return Zoom.ZOOM_FACTORS;
+  }
 
   private processEvent(e: JQueryMouseEventObject, negativeAction: () => void, positiveAction: () => void) {
     const delta = normalize_mousewheel(e);
@@ -463,11 +474,11 @@ export class PdfJsViewer {
       }
       this.currentTask = task;
       this.dataSource(task.url)
-          .then(document => {
-            if (document) {
-              this.loadDocument(task, document);
-            }
-          });
+        .then(document => {
+          if (document) {
+            this.loadDocument(task, document);
+          }
+        });
     }
   }
 
@@ -494,7 +505,6 @@ export class PdfJsViewer {
     }
   }
 
-
   private openPage(pdfFile: any, pageNumber: number) {
     const onPageSuccess = (page: any) => {
       if (!this.currentTask) {
@@ -519,18 +529,8 @@ export class PdfJsViewer {
         pageView.setPdfPage(page);
       }
       pageView.update(scale);
-      const onDrawSuccess = () => {
-        this.positionCanvas(pageNumber);
-        this.pageReady.invoke();
-        this.stopRendering();
-        this.completeTaskAndPullQueue(undefined);
-      };
-      const onDrawFailure = (error: string) => {
-        this.stopRendering();
-        this.logger.error(`Failed to render page ${pageNumber} from url=${pdfFile.url}, got error:${error}`);
-        this.completeTaskAndPullQueue(this.i18n.text("js.pdfjs.failure.page_render", pageNumber, error));
-      };
-      pageView.draw().then(onDrawSuccess, onDrawFailure)
+      this.scrollUpdate();
+      this.completeTaskAndPullQueue(undefined);
     };
     const onPageFailure = (error: string) => {
       this.stopRendering();
@@ -538,6 +538,33 @@ export class PdfJsViewer {
       this.completeTaskAndPullQueue(this.i18n.text("js.pdfjs.failure.page_get", pageNumber, error));
     };
     pdfFile.getPage(pageNumber).then(onPageSuccess, onPageFailure);
+    return true;
+  }
+
+  private renderPage(pageNumber: number) {
+    var state = this.loadedPages[pageNumber - 1].renderingState;
+    switch (state) {
+      case RenderingStates.FINISHED:
+        return false;
+      case RenderingStates.PAUSED:
+        break;
+      case RenderingStates.RUNNING:
+        break;
+      case RenderingStates.INITIAL:
+        if (this.currentFile && this.currentFileUrl) {
+          const onDrawSuccess = () => {
+            this.positionCanvas(pageNumber);
+            this.pageReady.invoke();
+            this.stopRendering();
+          };
+          const onDrawFailure = (error: string) => {
+            this.stopRendering();
+            this.logger.error(`Failed to render page ${pageNumber} from url=${this.currentFileUrl}, got error:${error}`);
+          };
+          this.loadedPages[pageNumber - 1].draw().then(onDrawSuccess, onDrawFailure)
+        }
+        break;
+    }
     return true;
   }
 
@@ -606,6 +633,12 @@ export class PdfJsViewer {
     }
   }
 
+  private getCurrentVisiblePages() {
+    if (this.currentFile) {
+      return PdfJsUtils.getVisibleElements(this.getRootElement()[0], this.loadedPages, true);
+    }
+  }
+
   addOnPageReady(callback: any) {
     this.pageReady.add(callback);
   }
@@ -617,6 +650,20 @@ export class PdfJsViewer {
   onResize() {
     if (this.currentFile && this.currentFileUrl) {
       this.showAll(this.currentFileUrl, true);
+    }
+  }
+
+  scrollUpdate() {
+    let visible = this.getCurrentVisiblePages();
+    let numVisible = visible.views.length;
+
+    if (numVisible === 0) {
+      return;
+    }
+    this.currentPage = visible.first.id;
+    for (let page of visible.views) {
+      let pageNumber = page.view.id;
+      this.renderPage(pageNumber);
     }
   }
 
