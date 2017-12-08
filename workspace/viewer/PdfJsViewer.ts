@@ -70,7 +70,7 @@ enum ZoomingMode {
   FIT_PAGE
 }
 
-let RenderingStates = {
+const RenderingStates = {
   INITIAL: 0,
   RUNNING: 1,
   PAUSED: 2,
@@ -357,7 +357,7 @@ const DEFAULT_DATA_SOURCE = (url: string) => $.Deferred<string>().resolve(url);
 
 export class PdfJsViewer {
   // These are from pdfjs library
-  loadedPages: PDFPageViewStatic[] = [];
+  loadedPages: Array<PDFPageViewStatic> = [];
   currentFile?: PDF.PDFDocumentProxy;
   currentFileUrl?: string;
   currentPage: number = 1;
@@ -446,11 +446,11 @@ export class PdfJsViewer {
   }
 
   public showAll(url: string, isResize: boolean = false) {
-    pdfjs.getDocument(url).then((pdf) => {
+    pdfjs.getDocument(url).then( pdf => {
       for (let i = 1; i <= pdf.numPages; i++) {
         this.show(url, i, isResize);
       }
-    })
+    });
   }
 
   // This method completes current task. It pulls the queue if queue is not empty, otherwise it
@@ -483,7 +483,7 @@ export class PdfJsViewer {
   }
 
   private loadDocument(task: PageTask, document: Uint8Array | string) {
-    const onDocumentSuccess = (pdf) => {
+    const onDocumentSuccess = pdf => {
       this.currentFile = pdf;
       this.currentFileUrl = task.url;
       if (this.currentPage > pdf.numPages) {
@@ -542,7 +542,7 @@ export class PdfJsViewer {
   }
 
   private renderPage(pageNumber: number) {
-    var state = this.loadedPages[pageNumber - 1].renderingState;
+    const state = this.loadedPages[pageNumber - 1].renderingState;
     switch (state) {
       case RenderingStates.FINISHED:
         return false;
@@ -561,7 +561,7 @@ export class PdfJsViewer {
             this.stopRendering();
             this.logger.error(`Failed to render page ${pageNumber} from url=${this.currentFileUrl}, got error:${error}`);
           };
-          this.loadedPages[pageNumber - 1].draw().then(onDrawSuccess, onDrawFailure)
+          this.loadedPages[pageNumber - 1].draw().then(onDrawSuccess, onDrawFailure);
         }
         break;
     }
@@ -597,7 +597,7 @@ export class PdfJsViewer {
   }
 
   resetCanvas() {
-    for (let page of this.loadedPages) {
+    for (const page of this.loadedPages) {
       page.destroy();
     }
     this.loadedPages = [];
@@ -611,7 +611,7 @@ export class PdfJsViewer {
     if (this.currentFile === undefined) {
       return;
     }
-    let pageView = this.findPageView(pageNumber);
+    const pageView = this.findPageView(pageNumber);
     if (pageView) {
       pageView.div.scrollIntoView();
     }
@@ -654,15 +654,15 @@ export class PdfJsViewer {
   }
 
   scrollUpdate() {
-    let visible = this.getCurrentVisiblePages();
-    let numVisible = visible.views.length;
+    const visible = this.getCurrentVisiblePages();
+    const numVisible = visible.views.length;
 
     if (numVisible === 0) {
       return;
     }
     this.currentPage = visible.first.id;
-    for (let page of visible.views) {
-      let pageNumber = page.view.id;
+    for (const page of visible.views) {
+      const pageNumber = page.view.id;
       this.renderPage(pageNumber);
     }
   }
@@ -694,23 +694,23 @@ export class PdfJsViewer {
     if (this.currentFileUrl) {
       this.zoom.zoomIn() && this.onResize();
     }
-  };
+  }
 
   zoomOut = () => {
     if (this.currentFileUrl) {
       this.zoom.zoomOut() && this.onResize();
     }
-  };
+  }
 
   zoomWidth = () => {
     this.zoom.setFitting(ZoomingMode.FIT_WIDTH);
     this.onResize();
-  };
+  }
 
   zoomPage = () => {
     this.zoom.setFitting(ZoomingMode.FIT_PAGE);
     this.onResize();
-  };
+  }
 
   zoomPreset(scale: number) {
     this.zoom.setPreset(scale);
