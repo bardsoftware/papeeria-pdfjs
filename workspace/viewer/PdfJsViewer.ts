@@ -108,11 +108,11 @@ class Zoom {
         const viewport = page.getViewport(1);
         if (this.mode === ZoomingMode.FIT_WIDTH) {
           // leave some space for the scrollbar
-          this.fittingScale = (container.width() - 30) / viewport.width;
+          this.fittingScale = (container.width() - 45) / viewport.width;
         } else {
           // leave some padding
           const scaleHeight = (container.height() - 30) / viewport.height;
-          const scaleWidth = (container.width() - 30) / viewport.width;
+          const scaleWidth = (container.width() - 45) / viewport.width;
           this.fittingScale = Math.min(scaleHeight, scaleWidth);
         }
       }
@@ -578,8 +578,8 @@ export class PdfJsViewer {
     } else {
       canvas.css("left", "0px");
     }
-    if (canvas.height() < this.jqRoot.height()) {
-      canvas.css("top", `${(this.jqRoot.height()) / 2 - (canvas.height() / 2)}px`);
+    if (canvas.height() < parent.height()) {
+      canvas.css("top", `${(parent.height()) / 2 - (canvas.height() / 2)}px`);
     } else {
       canvas.css("top", "0px");
     }
@@ -591,8 +591,8 @@ export class PdfJsViewer {
     const canvasOffset = canvas.position();
     const textLayer = parent.find(".textLayer");
     textLayer.css({
-      top: canvasOffset.top + this.jqRoot.scrollTop(),
-      left: canvasOffset.left + this.jqRoot.scrollLeft()
+      top: canvasOffset.top,
+      left: canvasOffset.left
     });
   }
 
