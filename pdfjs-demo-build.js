@@ -51791,11 +51791,11 @@ define('workspace/viewer/PdfJsViewer',["require", "exports", "pdf.combined", "pd
                 if (!this.fittingScale) {
                     var viewport = page.getViewport(1);
                     if (this.mode === ZoomingMode.FIT_WIDTH) {
-                        this.fittingScale = (container.width() - 30) / viewport.width;
+                        this.fittingScale = (container.width() - 45) / viewport.width;
                     }
                     else {
                         var scaleHeight = (container.height() - 30) / viewport.height;
-                        var scaleWidth = (container.width() - 30) / viewport.width;
+                        var scaleWidth = (container.width() - 45) / viewport.width;
                         this.fittingScale = Math.min(scaleHeight, scaleWidth);
                     }
                 }
@@ -52214,8 +52214,8 @@ define('workspace/viewer/PdfJsViewer',["require", "exports", "pdf.combined", "pd
             else {
                 canvas.css("left", "0px");
             }
-            if (canvas.height() < this.jqRoot.height()) {
-                canvas.css("top", (this.jqRoot.height()) / 2 - (canvas.height() / 2) + "px");
+            if (canvas.height() < parent.height()) {
+                canvas.css("top", (parent.height()) / 2 - (canvas.height() / 2) + "px");
             }
             else {
                 canvas.css("top", "0px");
@@ -52229,8 +52229,8 @@ define('workspace/viewer/PdfJsViewer',["require", "exports", "pdf.combined", "pd
             var canvasOffset = canvas.position();
             var textLayer = parent.find(".textLayer");
             textLayer.css({
-                top: canvasOffset.top + this.jqRoot.scrollTop(),
-                left: canvasOffset.left + this.jqRoot.scrollLeft()
+                top: canvasOffset.top,
+                left: canvasOffset.left
             });
         };
         PdfJsViewer.prototype.resetCanvas = function () {
