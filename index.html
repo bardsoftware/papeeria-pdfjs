@@ -26,7 +26,14 @@
       }}
       i18n = { text: function(key) { return key; }}
       viewer = new PdfJsViewerModule.PdfJsViewer($("#viewer"), alertImpl, loggerImpl, utils, i18n);
-      viewer.show('/diploma.pdf', 1);
+      viewer.showAll({
+       url: '/diploma.pdf',
+       modificationTs: 1,
+       isResize: false,
+       targetId: 'diploma.pdf',
+       isNewFile: true,
+       complete: function() {} 
+      });
     });
   </script>
 </head>
