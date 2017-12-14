@@ -4,13 +4,28 @@
 /// <amd-dependency path="pdfjs-web/pdf_page_view" name="PDFPageView"/>
 /// <amd-dependency path="pdfjs-web/text_layer_builder" name="TextLayerBuilder"/>
 /// <amd-dependency path="pdfjs-web/ui_utils" name="PdfJsUtils"/>
+/// <reference path="../../papeeria-global.d.ts"/>
 
 declare const PdfJsModule: any;
 declare const PDFPageView, TextLayerBuilder, PdfJsUtils: any;
 const pdfjs: PDF.PDFJSStatic = PdfJsModule;
 
-interface MutableMap<T> {
-  [key: string]: T;
+interface PDFPageViewStatic {
+  id: number;
+  div: HTMLElement;
+  pdfPage: PDF.PDFPageProxy;
+
+  new(options: any): PDFPageViewStatic;
+
+  destroy(): void;
+
+  setPdfPage(pdfPage: PDF.PDFPageProxy): void;
+
+  draw(): any;
+
+  update(scale: number, rotation?: number): void;
+
+  updatePosition(): void;
 }
 
 // Interfaces for communication with other components
@@ -41,10 +56,10 @@ function fallbackRequestAnimationFrame(callback: any, element: any) {
 
 if (!window.requestAnimationFrame) {
   window.requestAnimationFrame = window.webkitRequestAnimationFrame ||
-      window.mozRequestAnimationFrame ||
-      window.oRequestAnimationFrame ||
-      window.msRequestAnimationFrame ||
-      fallbackRequestAnimationFrame;
+    window.mozRequestAnimationFrame ||
+    window.oRequestAnimationFrame ||
+    window.msRequestAnimationFrame ||
+    fallbackRequestAnimationFrame;
   pdfjs.disableStream = true;
 }
 
@@ -65,6 +80,7 @@ class Zoom {
   private idxPresetScale = 0;
   // Dynamically calculated scale which is used when mode is FIT*
   private fittingScale?: number = undefined;
+
   // Returns currently used scale in percents for display purposes
   current(): number {
     return Math.round(100 * (
@@ -84,11 +100,11 @@ class Zoom {
         const viewport = page.getViewport(1);
         if (this.mode === ZoomingMode.FIT_WIDTH) {
           // leave some space for the scrollbar
-          this.fittingScale = (container.width() - 30) / viewport.width;
+          this.fittingScale = (container.width() - 45) / viewport.width;
         } else {
           // leave some padding
           const scaleHeight = (container.height() - 30) / viewport.height;
-          const scaleWidth = (container.width() - 30) / viewport.width;
+          const scaleWidth = (container.width() - 45) / viewport.width;
           this.fittingScale = Math.min(scaleHeight, scaleWidth);
         }
       }
@@ -121,6 +137,7 @@ class Zoom {
     }
     return false;
   }
+
   // Zooms out. If we already use preset then we only need to decrease index. If we use fitting scale
   // then we search for the closest lesser preset scale.
   zoomOut(): boolean {
@@ -173,14 +190,25 @@ interface PageTask {
   url: string;
   // Page which should be displayed
   page: number;
+  // Timestamp in milliseconds when the file was last modified
+  modificationTs: number;
   // Calculated flag which indicates whether we're showing the contents of absolutely new file
   // TODO: we probably need to remove it
   isNewFile: boolean;
   // Flag indicating if container size has changed
   isResize: boolean;
   // Identifier of the shown PDF file
-  mainFileId: string | undefined;
+  mainFileId?: string;
   // Function which is called on task completion
+  complete(): void;
+}
+
+export interface DocumentTask {
+  url: string;
+  modificationTs: number;
+  isResize: boolean;
+  targetId: string;
+  isNewFile?: boolean;
   complete(): void;
 }
 
@@ -189,34 +217,37 @@ interface PageTask {
 // resize events from the layout and scrolling events from the viewer itself.
 class Queue {
   // We keep a reference to the last completed task to be able to skip tasks which need no re-rendering
-  lastCompleted: PageTask | undefined;
+  lastCompleted: DocumentTask | undefined;
 
   // task queue
-  private tasks: MutableList<PageTask> = [];
+  private tasks: MutableList<DocumentTask> = [];
 
   // Pushes a new task which requests showing the given page of file from the given url. If the last task has the
   // same url, page and isResize flag then new task is ignored. In case when queue is empty, the last task is the
   // last completed one.
   // Task is removed from the queue when it completes. Calling complete() is a must, no matter if task was
   // successful or not
-  push(url: string, page: number, isResize: boolean, mainFileId?: string) {
+  push(newTask: DocumentTask) {
     let isNewFile = true;
     const lastTask = this.isEmpty() ? this.lastCompleted : this.tasks[this.tasks.length - 1];
     if (lastTask) {
       // Ignore task if it is exactly the same as the last one
-      if (lastTask.url === url && lastTask.page === page && lastTask.isResize === isResize) {
+      if (lastTask.url === newTask.url
+          && lastTask.isResize === newTask.isResize
+          && lastTask.modificationTs === newTask.modificationTs) {
         return;
       }
       // If urls are different then we're showing a new file and need more cleanup
-      isNewFile = (lastTask.mainFileId !== mainFileId);
+      isNewFile = (lastTask.targetId !== newTask.targetId);
     }
-    const task: PageTask = {
-      url: url,
-      page: page,
+    const task: DocumentTask = {
+      url: newTask.url,
       isNewFile: isNewFile,
-      isResize: isResize,
-      mainFileId: mainFileId,
+      isResize: newTask.isResize,
+      targetId: newTask.targetId,
+      modificationTs: newTask.modificationTs,
       complete: () => {
+        newTask.complete();
         this.tasks.shift();
         // This will make the last completed task not resize; thus new resize task will be scheduled even if the
         // last completed was resize as well
@@ -227,11 +258,13 @@ class Queue {
     this.tasks.push(task);
   }
 
-  pull(): PageTask {
-    if (this.isEmpty()) {
+  pull(): DocumentTask {
+    const task = this.tasks.shift();
+    if (task == undefined) {
       throw new Error("Task queue is expected to be non-empty in pull()");
+    } else {
+      return task;
     }
-    return this.tasks[0];
   }
 
   isEmpty(): boolean {
@@ -267,11 +300,14 @@ function normalize_mousewheel(e: JQueryMouseEventObject): number {
 }
 
 type Callback = (...args) => void;
+
 class CallbacksList {
   private readonly callbacks: MutableList<Callback> = [];
+
   add(cb: Callback) {
     this.callbacks.push(cb);
   }
+
   invoke(...args) {
     const context = this;
     for (const cb of this.callbacks) {
@@ -329,11 +365,11 @@ const DEFAULT_DATA_SOURCE = (url: string) => $.Deferred<string>().resolve(url);
 
 export class PdfJsViewer {
   // These are from pdfjs library
-  pdfPageView: any;
+  loadedPages: PDFPageViewStatic[] = [];
   currentFile?: PDF.PDFDocumentProxy;
   currentFileUrl?: string;
-  currentPage: number = 0;
-  currentTask: PageTask | undefined;
+  currentPage: number = 1;
+  currentTask: DocumentTask | undefined;
   // Some magic to handle weird touchpad events which send delta exceeding the threshold a few times in a row.
   // Dynamic threshold basically cuts some scrolling events depending on the scroll delta value.
   // Effective threshold will grow and shrink by THRESHOLD_FACTOR as it is hit,
@@ -343,7 +379,7 @@ export class PdfJsViewer {
   private readonly queue = new Queue();
   private readonly pageReady = new CallbacksList();
   private readonly textLayerFactory = {
-    createTextLayerBuilder: function(div: any, page: any, viewport: any) {
+    createTextLayerBuilder: function (div: any, page: any, viewport: any) {
       return new TextLayerBuilder.TextLayerBuilder({
         textLayerDiv: div,
         pageIndex: page,
@@ -369,9 +405,6 @@ export class PdfJsViewer {
       const originalEvent = e.originalEvent as MouseEvent;
       if (originalEvent.ctrlKey || originalEvent.metaKey) {
         this.processEvent(e, this.zoomIn, this.zoomOut);
-      }
-      if (jqRoot.find(".canvasWrapper").hasClass("shadow")) { // # that is, the whole page is shown, no scrollbars
-        this.processEvent(e, this.pageUp, this.pageDown);
       }
     });
   }
@@ -409,9 +442,9 @@ export class PdfJsViewer {
 
   // Schedules a new page open task. If queue is empty, the task is executed immediately, otherwise it is
   // added to the queue and waits until the current task completes.
-  public show(url: string, page: number, isResize: boolean = false, mainFileId?: string) {
+  public showAll(documentTask: DocumentTask) {
     const isEmpty = this.queue.isEmpty();
-    this.queue.push(url, page, isResize, mainFileId);
+    this.queue.push(documentTask);
     if (isEmpty) {
       this.completeTaskAndPullQueue(undefined);
     }
@@ -424,12 +457,12 @@ export class PdfJsViewer {
     if (this.currentTask) {
       this.currentTask.complete();
     }
-    this.currentTask = undefined;
 
     if (this.queue.isEmpty()) {
       if (errorMessage) {
         this.alert.show(errorMessage);
       }
+      this.currentTask = undefined;
     } else {
       const task = this.queue.pull();
       if (task.isNewFile) {
@@ -437,7 +470,6 @@ export class PdfJsViewer {
         this.zoom.onResize();
       }
       this.currentTask = task;
-      this.currentPage = task.page;
       this.dataSource(task.url)
           .then(document => {
             if (document) {
@@ -447,14 +479,40 @@ export class PdfJsViewer {
     }
   }
 
-  private loadDocument(task: PageTask, document: Uint8Array | string) {
+  private loadDocument(task: DocumentTask, document: Uint8Array | string) {
     const onDocumentSuccess = pdf => {
       this.currentFile = pdf;
       this.currentFileUrl = task.url;
       if (this.currentPage > pdf.numPages) {
         this.currentPage = pdf.numPages;
       }
-      this.openPage(pdf, this.currentPage);
+
+      const onAllPagesAlways = () => {
+        this.completeTaskAndPullQueue(undefined);
+        this.stopRendering();
+      };
+      const onAllPagesFailure = error => {
+        onAllPagesAlways();
+        this.logger.error(`Failed to render document, got error:${error}`);
+      };
+
+      this.resetCanvas();
+      let waiting = pdf.numPages;
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const promise = this.openPage(pdf, i);
+        promise.then(() => {
+          if (waiting > 0) {
+            this.positionCanvas(i);
+            waiting--;
+            if (waiting === 0) {
+              onAllPagesAlways();
+            }
+          }
+        }, error => {
+          onAllPagesFailure(error);
+          waiting = -1;
+        });
+      }
     };
 
     const onDocumentFailure = (error: string) => {
@@ -471,57 +529,59 @@ export class PdfJsViewer {
   }
 
 
-  private openPage(pdfFile: any, pageNumber: number) {
+  private openPage(pdfFile: any, pageNumber: number): PDF.PDFPromise<PDF.PDFPageProxy> {
     const onPageSuccess = (page: any) => {
-      if (this.currentTask) {
-        if (this.currentTask.isResize) {
-          this.resetPage();
-        }
+      if (!this.currentTask) {
+        return false;
+      }
+      if (this.currentTask.isResize) {
+        this.resetPage();
       }
       const scale = this.zoom.factor(page, this.jqRoot);
-      if (!this.pdfPageView) {
-        this.pdfPageView = new PDFPageView.PDFPageView({
+      let pageView;
+      if (this.currentTask.isResize) {
+        pageView = this.findPageView(pageNumber);
+      } else {
+        pageView = new PDFPageView.PDFPageView({
           container: this.jqRoot.get(0),
           id: pageNumber,
           scale: scale,
           defaultViewport: page.getViewport(1),
           textLayerFactory: this.textLayerFactory
         });
+        this.loadedPages.push(pageView);
+        pageView.setPdfPage(page);
       }
-      this.pdfPageView.update(scale);
-      this.pdfPageView.setPdfPage(page);
+      pageView.update(scale);
       const onDrawSuccess = () => {
-        this.positionCanvas();
+        this.positionCanvas(pageNumber);
         this.pageReady.invoke();
-        this.stopRendering();
-        this.completeTaskAndPullQueue(undefined);
       };
       const onDrawFailure = (error: string) => {
-        this.stopRendering();
         this.logger.error(`Failed to render page ${pageNumber} from url=${pdfFile.url}, got error:${error}`);
-        this.completeTaskAndPullQueue(this.i18n.text("js.pdfjs.failure.page_render", pageNumber, error));
       };
-      this.pdfPageView.draw().then(onDrawSuccess, onDrawFailure);
+      pageView.draw().then(onDrawSuccess, onDrawFailure)
     };
     const onPageFailure = (error: string) => {
-      this.stopRendering();
       this.logger.error(`Failed to fetch page ${pageNumber} from url=${pdfFile.url}, got error:${error}`);
-      this.completeTaskAndPullQueue(this.i18n.text("js.pdfjs.failure.page_get", pageNumber, error));
     };
-    pdfFile.getPage(pageNumber).then(onPageSuccess, onPageFailure);
-    return true;
+    const result = pdfFile.getPage(pageNumber);
+    result.then(onPageSuccess, onPageFailure);
+    return result;
   }
 
-  private positionCanvas() {
-    const canvas = $(".canvasWrapper", this.jqRoot);
+  private positionCanvas(pageNumber: number) {
+    const parent = $(`#pageContainer${pageNumber}`, this.jqRoot);
+    const canvas = parent.find(".canvasWrapper");
+
     canvas.removeClass("hide");
     if (canvas.width() < this.jqRoot.width()) {
       canvas.css("left", `${(this.jqRoot.width()) / 2 - (canvas.width() / 2)}px`);
     } else {
       canvas.css("left", "0px");
     }
-    if (canvas.height() < this.jqRoot.height()) {
-      canvas.css("top", `${(this.jqRoot.height()) / 2 - (canvas.height() / 2)}px`);
+    if (canvas.height() < parent.height()) {
+      canvas.css("top", `${(parent.height()) / 2 - (canvas.height() / 2)}px`);
     } else {
       canvas.css("top", "0px");
     }
@@ -531,29 +591,44 @@ export class PdfJsViewer {
       canvas.removeClass("shadow");
     }
     const canvasOffset = canvas.position();
-    const textLayer = $(".textLayer", this.jqRoot);
+    const textLayer = parent.find(".textLayer");
     textLayer.css({
-      top : canvasOffset.top,
-      left : canvasOffset.left
+      top: canvasOffset.top,
+      left: canvasOffset.left
     });
   }
 
   resetCanvas() {
-    if (this.pdfPageView) {
-      this.pdfPageView.destroy();
+    for (let page of this.loadedPages) {
+      page.destroy();
     }
-    this.pdfPageView = undefined;
+    this.loadedPages = [];
     this.jqRoot.empty();
     this.queue.clear();
+    this.currentFile = undefined;
+    this.currentFileUrl = undefined;
   }
 
-  private openCurrentPage() {
-    if (this.currentFileUrl) {
-      const lastCompletedMainFileId = (this.queue.isEmpty() && this.queue.lastCompleted)
-          ? this.queue.lastCompleted.mainFileId : undefined;
-      this.show(this.currentFileUrl, this.currentPage, true, lastCompletedMainFileId);
+  public showPage(pageNumber: number) {
+    if (this.currentFile === undefined) {
+      return;
+    }
+    let pageView = this.findPageView(pageNumber);
+    if (pageView) {
+      pageView.div.scrollIntoView();
     }
   }
+
+  private findPageView(pageNumber: number): PDFPageViewStatic | undefined {
+    if (!this.currentFile) {
+      return undefined;
+    }
+    if (pageNumber > this.currentFile.numPages) {
+      pageNumber = this.currentFile.numPages;
+    }
+    return this.loadedPages.filter(x => x.id === pageNumber)[0];
+  }
+
   private resetPage() {
     if (this.currentPage !== undefined) {
       this.zoom.onResize();
@@ -564,57 +639,70 @@ export class PdfJsViewer {
     this.pageReady.add(callback);
   }
 
-  getRootElement(): JQuery { return this.jqRoot; }
+  getRootElement(): JQuery {
+    return this.jqRoot;
+  }
 
   onResize() {
-    if (this.currentFile) {
-      this.openCurrentPage();
+    if (this.currentTask) {
+      this.showAll({
+        targetId: this.currentTask.targetId,
+        modificationTs: this.currentTask.modificationTs,
+        isResize: true,
+        url: this.currentTask.url,
+        isNewFile: true,
+        complete: function() {}
+      });
     }
   }
 
   pageUp = () => {
     if (this.currentPage > 1) {
       this.currentPage -= 1;
-      this.openCurrentPage();
+      this.showPage(this.currentPage);
     }
   }
 
   pageDown = () => {
     if (this.currentFile && this.currentPage < this.currentFile.numPages) {
       this.currentPage += 1;
-      this.openCurrentPage();
+      this.showPage(this.currentPage);
     }
   }
 
-  getCurrentPage(): number | undefined { return this.currentPage; }
+  getCurrentPage(): number | undefined {
+    return this.currentPage;
+  }
 
-  getZoomScale(): number { return this.zoom.current(); }
+  getZoomScale(): number {
+    return this.zoom.current();
+  }
 
   // Toolbar button handlers
   zoomIn = () => {
-    if (this.zoom.zoomIn()) {
-      this.openCurrentPage();
+    if (this.currentFileUrl) {
+      this.zoom.zoomIn() && this.onResize();
     }
-  }
+  };
 
   zoomOut = () => {
-    if (this.zoom.zoomOut()) {
-      this.openCurrentPage();
+    if (this.currentFileUrl) {
+      this.zoom.zoomOut() && this.onResize();
     }
-  }
+  };
 
   zoomWidth = () => {
     this.zoom.setFitting(ZoomingMode.FIT_WIDTH);
-    this.openCurrentPage();
-  }
+    this.onResize();
+  };
 
   zoomPage = () => {
     this.zoom.setFitting(ZoomingMode.FIT_PAGE);
-    this.openCurrentPage();
-  }
+    this.onResize();
+  };
 
   zoomPreset(scale: number) {
     this.zoom.setPreset(scale);
-    this.openCurrentPage();
+    this.onResize();
   }
 }
