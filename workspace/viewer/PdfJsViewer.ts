@@ -198,15 +198,25 @@ interface PageTask {
   url: string;
   // Page which should be displayed
   page: number;
+  // Timestamp in milliseconds when the file was last modified
+  modificationTs: number;
   // Calculated flag which indicates whether we're showing the contents of absolutely new file
   // TODO: we probably need to remove it
   isNewFile: boolean;
   // Flag indicating if container size has changed
   isResize: boolean;
   // Identifier of the shown PDF file
-  mainFileId: string | undefined;
-
+  mainFileId?: string;
   // Function which is called on task completion
+  complete(): void;
+}
+
+export interface DocumentTask {
+  url: string;
+  modificationTs: number;
+  isResize: boolean;
+  targetId: string;
+  isNewFile?: boolean;
   complete(): void;
 }
 
@@ -215,33 +225,37 @@ interface PageTask {
 // resize events from the layout and scrolling events from the viewer itself.
 class Queue {
   // We keep a reference to the last completed task to be able to skip tasks which need no re-rendering
-  lastCompleted: PageTask | undefined;
+  lastCompleted: DocumentTask | undefined;
+
   // task queue
-  private tasks: MutableList<PageTask> = [];
+  private tasks: MutableList<DocumentTask> = [];
 
   // Pushes a new task which requests showing the given page of file from the given url. If the last task has the
   // same url, page and isResize flag then new task is ignored. In case when queue is empty, the last task is the
   // last completed one.
   // Task is removed from the queue when it completes. Calling complete() is a must, no matter if task was
   // successful or not
-  push(url: string, page: number, isResize: boolean, mainFileId?: string) {
+  push(newTask: DocumentTask) {
     let isNewFile = true;
     const lastTask = this.isEmpty() ? this.lastCompleted : this.tasks[this.tasks.length - 1];
     if (lastTask) {
       // Ignore task if it is exactly the same as the last one
-      if (lastTask.url === url && lastTask.page === page && lastTask.isResize === isResize) {
+      if (lastTask.url === newTask.url
+          && lastTask.isResize === newTask.isResize
+          && lastTask.modificationTs === newTask.modificationTs) {
         return;
       }
       // If urls are different then we're showing a new file and need more cleanup
-      isNewFile = (lastTask.mainFileId !== mainFileId);
+      isNewFile = (lastTask.targetId !== newTask.targetId);
     }
-    const task: PageTask = {
-      url: url,
-      page: page,
+    const task: DocumentTask = {
+      url: newTask.url,
       isNewFile: isNewFile,
-      isResize: isResize,
-      mainFileId: mainFileId,
+      isResize: newTask.isResize,
+      targetId: newTask.targetId,
+      modificationTs: newTask.modificationTs,
       complete: () => {
+        newTask.complete();
         this.tasks.shift();
         // This will make the last completed task not resize; thus new resize task will be scheduled even if the
         // last completed was resize as well
@@ -252,11 +266,13 @@ class Queue {
     this.tasks.push(task);
   }
 
-  pull(): PageTask {
-    if (this.isEmpty()) {
+  pull(): DocumentTask {
+    const task = this.tasks.shift();
+    if (task == undefined) {
       throw new Error("Task queue is expected to be non-empty in pull()");
+    } else {
+      return task;
     }
-    return this.tasks[0];
   }
 
   isEmpty(): boolean {
@@ -361,7 +377,7 @@ export class PdfJsViewer {
   currentFile?: PDF.PDFDocumentProxy;
   currentFileUrl?: string;
   currentPage: number = 1;
-  currentTask: PageTask | undefined;
+  currentTask: DocumentTask | undefined;
   scroll: any = PdfJsUtils.watchScroll(this.getRootElement()[0], this.scrollUpdate.bind(this));
   // Some magic to handle weird touchpad events which send delta exceeding the threshold a few times in a row.
   // Dynamic threshold basically cuts some scrolling events depending on the scroll delta value.
@@ -437,20 +453,12 @@ export class PdfJsViewer {
 
   // Schedules a new page open task. If queue is empty, the task is executed immediately, otherwise it is
   // added to the queue and waits until the current task completes.
-  public show(url: string, page: number, isResize: boolean = false, mainFileId?: string) {
+  public showAll(documentTask: DocumentTask) {
     const isEmpty = this.queue.isEmpty();
-    this.queue.push(url, page, isResize, mainFileId);
+    this.queue.push(documentTask);
     if (isEmpty) {
       this.completeTaskAndPullQueue(undefined);
     }
-  }
-
-  public showAll(url: string, isResize: boolean = false) {
-    pdfjs.getDocument(url).then( pdf => {
-      for (let i = 1; i <= pdf.numPages; i++) {
-        this.show(url, i, isResize);
-      }
-    });
   }
 
   // This method completes current task. It pulls the queue if queue is not empty, otherwise it
@@ -460,12 +468,12 @@ export class PdfJsViewer {
     if (this.currentTask) {
       this.currentTask.complete();
     }
-    this.currentTask = undefined;
 
     if (this.queue.isEmpty()) {
       if (errorMessage) {
         this.alert.show(errorMessage);
       }
+      this.currentTask = undefined;
     } else {
       const task = this.queue.pull();
       if (task.isNewFile) {
@@ -482,14 +490,41 @@ export class PdfJsViewer {
     }
   }
 
-  private loadDocument(task: PageTask, document: Uint8Array | string) {
+  private loadDocument(task: DocumentTask, document: Uint8Array | string) {
     const onDocumentSuccess = pdf => {
       this.currentFile = pdf;
       this.currentFileUrl = task.url;
       if (this.currentPage > pdf.numPages) {
         this.currentPage = pdf.numPages;
       }
-      this.openPage(pdf, task.page);
+
+      const onAllPagesAlways = () => {
+        this.completeTaskAndPullQueue(undefined);
+        this.stopRendering();
+      };
+      const onAllPagesFailure = error => {
+        onAllPagesAlways();
+        this.logger.error(`Failed to render document, got error:${error}`);
+      };
+
+      this.resetCanvas();
+      let waiting = pdf.numPages;
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const promise = this.openPage(pdf, i);
+        promise.then(() => {
+          if (waiting > 0) {
+            this.positionCanvas(i);
+            waiting--;
+            if (waiting === 0) {
+              this.scrollUpdate();
+              onAllPagesAlways();
+            }
+          }
+        }, error => {
+          onAllPagesFailure(error);
+          waiting = -1;
+        });
+      }
     };
 
     const onDocumentFailure = (error: string) => {
@@ -505,7 +540,7 @@ export class PdfJsViewer {
     }
   }
 
-  private openPage(pdfFile: any, pageNumber: number) {
+  private openPage(pdfFile: any, pageNumber: number): PDF.PDFPromise<PDF.PDFPageProxy> {
     const onPageSuccess = (page: any) => {
       if (!this.currentTask) {
         return false;
@@ -529,16 +564,13 @@ export class PdfJsViewer {
         pageView.setPdfPage(page);
       }
       pageView.update(scale);
-      this.scrollUpdate();
-      this.completeTaskAndPullQueue(undefined);
     };
     const onPageFailure = (error: string) => {
-      this.stopRendering();
       this.logger.error(`Failed to fetch page ${pageNumber} from url=${pdfFile.url}, got error:${error}`);
-      this.completeTaskAndPullQueue(this.i18n.text("js.pdfjs.failure.page_get", pageNumber, error));
     };
-    pdfFile.getPage(pageNumber).then(onPageSuccess, onPageFailure);
-    return true;
+    const result = pdfFile.getPage(pageNumber);
+    result.then(onPageSuccess, onPageFailure);
+    return result;
   }
 
   private renderPage(pageNumber: number) {
@@ -551,7 +583,6 @@ export class PdfJsViewer {
       case RenderingStates.RUNNING:
         break;
       case RenderingStates.INITIAL:
-        if (this.currentFile && this.currentFileUrl) {
           const onDrawSuccess = () => {
             this.positionCanvas(pageNumber);
             this.pageReady.invoke();
@@ -562,7 +593,6 @@ export class PdfJsViewer {
             this.logger.error(`Failed to render page ${pageNumber} from url=${this.currentFileUrl}, got error:${error}`);
           };
           this.loadedPages[pageNumber - 1].draw().then(onDrawSuccess, onDrawFailure);
-        }
         break;
     }
     return true;
@@ -634,7 +664,7 @@ export class PdfJsViewer {
   }
 
   private getCurrentVisiblePages() {
-    if (this.currentFile) {
+    if (this.loadedPages) {
       return PdfJsUtils.getVisibleElements(this.getRootElement()[0], this.loadedPages, true);
     }
   }
@@ -648,8 +678,15 @@ export class PdfJsViewer {
   }
 
   onResize() {
-    if (this.currentFile && this.currentFileUrl) {
-      this.showAll(this.currentFileUrl, true);
+    if (this.currentTask) {
+      this.showAll({
+        targetId: this.currentTask.targetId,
+        modificationTs: this.currentTask.modificationTs,
+        isResize: true,
+        url: this.currentTask.url,
+        isNewFile: true,
+        complete: function() {}
+      });
     }
   }
 
@@ -694,23 +731,23 @@ export class PdfJsViewer {
     if (this.currentFileUrl) {
       this.zoom.zoomIn() && this.onResize();
     }
-  }
+  };
 
   zoomOut = () => {
     if (this.currentFileUrl) {
       this.zoom.zoomOut() && this.onResize();
     }
-  }
+  };
 
   zoomWidth = () => {
     this.zoom.setFitting(ZoomingMode.FIT_WIDTH);
     this.onResize();
-  }
+  };
 
   zoomPage = () => {
     this.zoom.setFitting(ZoomingMode.FIT_PAGE);
     this.onResize();
-  }
+  };
 
   zoomPreset(scale: number) {
     this.zoom.setPreset(scale);
