@@ -14,7 +14,7 @@ interface PDFPageViewStatic {
   id: number;
   div: HTMLElement;
   pdfPage: PDF.PDFPageProxy;
-  renderingState: number;
+  renderingState: RenderingStates;
 
   new(options: any): PDFPageViewStatic;
 
@@ -29,7 +29,27 @@ interface PDFPageViewStatic {
   updatePosition(): void;
 }
 
+interface VisiblePageStatic {
+  id: number;
+  percent: number;
+  view: PDFPageViewStatic;
+  x: number;
+  y: number;
+}
+
+interface VisiblePagesStatic {
+  views: Array<VisiblePageStatic>;
+  first: VisiblePageStatic;
+  last: VisiblePageStatic;
+}
+
+interface Scroll {
+  down: boolean;
+  lastY: number;
+  _eventHandler() : void;
+}
 // Interfaces for communication with other components
+
 
 // Logger logs message without attracting user attention
 interface Logger {
@@ -70,11 +90,11 @@ enum ZoomingMode {
   FIT_PAGE
 }
 
-const RenderingStates = {
-  INITIAL: 0,
-  RUNNING: 1,
-  PAUSED: 2,
-  FINISHED: 3
+enum RenderingStates {
+  INITIAL = 0,
+  RUNNING = 1,
+  PAUSED = 2,
+  FINISHED = 3
 };
 
 // This class is responsible for storing current value of zoom factor and recalculating it
@@ -378,7 +398,7 @@ export class PdfJsViewer {
   currentFileUrl?: string;
   currentPage: number = 1;
   currentTask: DocumentTask | undefined;
-  scroll: any = PdfJsUtils.watchScroll(this.getRootElement()[0], this.scrollUpdate.bind(this));
+  scroll: Scroll = PdfJsUtils.watchScroll(this.getRootElement()[0], () => this.scrollUpdate());
   // Some magic to handle weird touchpad events which send delta exceeding the threshold a few times in a row.
   // Dynamic threshold basically cuts some scrolling events depending on the scroll delta value.
   // Effective threshold will grow and shrink by THRESHOLD_FACTOR as it is hit,
@@ -577,7 +597,7 @@ export class PdfJsViewer {
     return result;
   }
 
-  private renderPage(pageNumber: number) {
+  private renderPage(pageNumber: number) : boolean {
     const state = this.loadedPages[pageNumber - 1].renderingState;
     switch (state) {
       case RenderingStates.FINISHED:
@@ -665,10 +685,11 @@ export class PdfJsViewer {
     }
   }
 
-  private getCurrentVisiblePages() {
-    if (this.loadedPages) {
+  private getCurrentVisiblePages() : VisiblePagesStatic | undefined {
+    if (this.loadedPages.length > 0) {
       return PdfJsUtils.getVisibleElements(this.getRootElement()[0], this.loadedPages, true);
     }
+    return undefined;
   }
 
   addOnPageReady(callback: any) {
@@ -694,15 +715,29 @@ export class PdfJsViewer {
 
   scrollUpdate() {
     const visible = this.getCurrentVisiblePages();
-    const numVisible = visible.views.length;
+    if(visible){
+      this.currentPage = visible.first.id;
+      for (const page of visible.views) {
+        const pageNumber = page.view.id;
+        this.renderPage(pageNumber);
+      }
 
-    if (numVisible === 0) {
-      return;
-    }
-    this.currentPage = visible.first.id;
-    for (const page of visible.views) {
-      const pageNumber = page.view.id;
-      this.renderPage(pageNumber);
+      //Trying to render next or prev page
+      if (this.scroll.down) {
+        let nextPageIndex = visible.last.id;
+        // ID's start at 1 so no need to add 1.
+        if (this.loadedPages[nextPageIndex] &&
+          this.loadedPages[nextPageIndex].renderingState !== RenderingStates.FINISHED) {
+          this.renderPage(nextPageIndex);
+        }
+      } else {
+        let previousPageIndex = visible.first.id - 2;
+        if (this.loadedPages[previousPageIndex] &&
+          this.loadedPages[previousPageIndex].renderingState !== RenderingStates.FINISHED) {
+          this.renderPage(previousPageIndex);
+        }
+      }
+
     }
   }
 
