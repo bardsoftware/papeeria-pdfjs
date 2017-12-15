@@ -400,6 +400,8 @@ export class PdfJsViewer {
   // We ignore some events when flag is on.
   private isRendering = false;
 
+  // Task corresponding to the last successfully loaded document.
+  private lastTask?: DocumentTask;
   constructor(private readonly jqRoot: JQuery,
               private readonly alert: Alert,
               private readonly logger: Logger,
@@ -492,6 +494,7 @@ export class PdfJsViewer {
 
   private loadDocument(task: DocumentTask, document: Uint8Array | string) {
     const onDocumentSuccess = pdf => {
+      this.lastTask = task;
       this.currentFile = pdf;
       this.currentFileUrl = task.url;
       if (this.currentPage > pdf.numPages) {
@@ -506,8 +509,9 @@ export class PdfJsViewer {
         onAllPagesAlways();
         this.logger.error(`Failed to render document, got error:${error}`);
       };
-
-      this.resetCanvas();
+      if (!task.isResize) {
+        this.resetCanvas();
+      }
       let waiting = pdf.numPages;
       for (let i = 1; i <= pdf.numPages; i++) {
         const promise = this.openPage(pdf, i);
@@ -626,18 +630,16 @@ export class PdfJsViewer {
     });
   }
 
-  resetCanvas() {
+  private resetCanvas() {
     for (const page of this.loadedPages) {
       page.destroy();
     }
     this.loadedPages = [];
     this.jqRoot.empty();
     this.queue.clear();
-    this.currentFile = undefined;
-    this.currentFileUrl = undefined;
   }
 
-  public showPage(pageNumber: number) {
+  private showPage(pageNumber: number) {
     if (this.currentFile === undefined) {
       return;
     }
@@ -678,12 +680,12 @@ export class PdfJsViewer {
   }
 
   onResize() {
-    if (this.currentTask) {
+    if (this.lastTask) {
       this.showAll({
-        targetId: this.currentTask.targetId,
-        modificationTs: this.currentTask.modificationTs,
+        targetId: this.lastTask.targetId,
+        modificationTs: this.lastTask.modificationTs,
         isResize: true,
-        url: this.currentTask.url,
+        url: this.lastTask.url,
         isNewFile: true,
         complete: function() {}
       });
@@ -728,13 +730,13 @@ export class PdfJsViewer {
 
   // Toolbar button handlers
   zoomIn = () => {
-    if (this.currentFileUrl) {
+    if (this.lastTask) {
       this.zoom.zoomIn() && this.onResize();
     }
   };
 
   zoomOut = () => {
-    if (this.currentFileUrl) {
+    if (this.lastTask) {
       this.zoom.zoomOut() && this.onResize();
     }
   };
