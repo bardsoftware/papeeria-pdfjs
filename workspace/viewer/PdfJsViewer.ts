@@ -27,6 +27,8 @@ interface PDFPageViewStatic {
   update(scale: number, rotation?: number): void;
 
   updatePosition(): void;
+
+  resume(): void;
 }
 
 interface VisiblePageStatic {
@@ -597,12 +599,14 @@ export class PdfJsViewer {
     return result;
   }
 
+  // This method returns false if PageView was rendered. Returns true if it's still rendering.
   private renderPage(pageNumber: number) : boolean {
     const state = this.loadedPages[pageNumber - 1].renderingState;
     switch (state) {
       case RenderingStates.FINISHED:
         return false;
       case RenderingStates.PAUSED:
+        this.loadedPages[pageNumber - 1].resume();
         break;
       case RenderingStates.RUNNING:
         break;
