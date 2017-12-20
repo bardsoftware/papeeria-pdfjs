@@ -29,10 +29,10 @@
       i18n = { text: function(key) { return key; }}
       viewer = new PdfJsViewerModule.PdfJsViewer($("#viewer"), alertImpl, loggerImpl, utils, i18n);
       viewer.showAll({
-       url: '/diploma.pdf',
+       url: '/book.pdf',
        modificationTs: 1,
        isResize: false,
-       targetId: 'diploma.pdf',
+       targetId: 'book.pdf',
        isNewFile: true,
        complete: function() {} 
       });

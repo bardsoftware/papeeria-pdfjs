@@ -717,6 +717,15 @@ export class PdfJsViewer {
     }
   }
 
+  private isRendered = false;
+  _scrollUpdate() {
+    if (this.isRendered) return;
+    for (let i = 0; i < this.loadedPages.length; i++) {
+      this.renderPage(i+1);
+    }
+    this.isRendered = true;
+  }
+
   scrollUpdate() {
     const visible = this.getCurrentVisiblePages();
     if(visible){
