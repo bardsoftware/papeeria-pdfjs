@@ -10,46 +10,68 @@ declare const PdfJsModule: any;
 declare const PDFPageView, TextLayerBuilder, PdfJsUtils: any;
 const pdfjs: PDF.PDFJSStatic = PdfJsModule;
 
+// View, representing PDF page of the document.
 interface PDFPageViewStatic {
   id: number;
+  // Page's div wrapper.
   div: HTMLElement;
+  // Actual view's PDF page.
   pdfPage: PDF.PDFPageProxy;
+  // Indicates status of rendering.
   renderingState: RenderingStates;
 
   new(options: any): PDFPageViewStatic;
 
   destroy(): void;
 
+  // Sets needed PDF page to the view.
   setPdfPage(pdfPage: PDF.PDFPageProxy): void;
 
+  // Draws page's canvas and text layers.
   draw(): any;
 
+  // Transforms page view into needed scale and rotation.
   update(scale: number, rotation?: number): void;
 
+  // Updates text layers' position.
   updatePosition(): void;
 
+  // Continues rendering, e.g., after it was paused.
   resume(): void;
 }
 
+// View of visible page.
 interface VisiblePageStatic {
   id: number;
+  // Percentage of visibility.
   percent: number;
   view: PDFPageViewStatic;
+  // Position relatively to other pages.
   x: number;
   y: number;
 }
 
+// Return type of getCurrentVisiblePages() function, which represents
+// user's current visible pages.
 interface VisiblePagesStatic {
+  // Array of visible pages. By default, it's sorted by visibility.
   views: Array<VisiblePageStatic>;
+  // The most and least visible pages.
   first: VisiblePageStatic;
   last: VisiblePageStatic;
 }
 
+// It's created for monitoring the scroll event.
 interface Scroll {
+  // This flag shows scroll's direction. Indicates true if last movement was down.
   down: boolean;
+  // Displays position, where scrolling has been stopped.
   lastY: number;
-  _eventHandler() : void;
+
+  // Triggers this function, when scroll event is happened.
+  _eventHandler(): void;
 }
+
 // Interfaces for communication with other components
 
 
@@ -229,6 +251,7 @@ interface PageTask {
   isResize: boolean;
   // Identifier of the shown PDF file
   mainFileId?: string;
+
   // Function which is called on task completion
   complete(): void;
 }
@@ -239,6 +262,7 @@ export interface DocumentTask {
   isResize: boolean;
   targetId: string;
   isNewFile?: boolean;
+
   complete(): void;
 }
 
@@ -263,8 +287,8 @@ class Queue {
     if (lastTask) {
       // Ignore task if it is exactly the same as the last one
       if (lastTask.url === newTask.url
-          && lastTask.isResize === newTask.isResize
-          && lastTask.modificationTs === newTask.modificationTs) {
+        && lastTask.isResize === newTask.isResize
+        && lastTask.modificationTs === newTask.modificationTs) {
         return;
       }
       // If urls are different then we're showing a new file and need more cleanup
@@ -424,6 +448,7 @@ export class PdfJsViewer {
 
   // Task corresponding to the last successfully loaded document.
   private lastTask?: DocumentTask;
+
   constructor(private readonly jqRoot: JQuery,
               private readonly alert: Alert,
               private readonly logger: Logger,
@@ -599,31 +624,29 @@ export class PdfJsViewer {
     return result;
   }
 
-  // This method returns false if PageView was rendered. Returns true if it's still rendering.
-  private renderPage(pageNumber: number) : boolean {
-    const state = this.loadedPages[pageNumber - 1].renderingState;
+  private renderPage(pageView: PDFPageViewStatic): void {
+    const state = pageView.renderingState;
     switch (state) {
       case RenderingStates.FINISHED:
-        return false;
+        break;
       case RenderingStates.PAUSED:
-        this.loadedPages[pageNumber - 1].resume();
+        pageView.resume();
         break;
       case RenderingStates.RUNNING:
         break;
       case RenderingStates.INITIAL:
-          const onDrawSuccess = () => {
-            this.positionCanvas(pageNumber);
-            this.pageReady.invoke();
-            this.stopRendering();
-          };
-          const onDrawFailure = (error: string) => {
-            this.stopRendering();
-            this.logger.error(`Failed to render page ${pageNumber} from url=${this.currentFileUrl}, got error:${error}`);
-          };
-          this.loadedPages[pageNumber - 1].draw().then(onDrawSuccess, onDrawFailure);
+        const onDrawSuccess = () => {
+          this.positionCanvas(pageView.id);
+          this.pageReady.invoke();
+          this.stopRendering();
+        };
+        const onDrawFailure = (error: string) => {
+          this.stopRendering();
+          this.logger.error(`Failed to render page ${pageView.id} from url=${this.currentFileUrl}, got error:${error}`);
+        };
+        pageView.draw().then(onDrawSuccess, onDrawFailure);
         break;
     }
-    return true;
   }
 
   private positionCanvas(pageNumber: number) {
@@ -689,7 +712,7 @@ export class PdfJsViewer {
     }
   }
 
-  private getCurrentVisiblePages() : VisiblePagesStatic | undefined {
+  private getCurrentVisiblePages(): VisiblePagesStatic | undefined {
     if (this.loadedPages.length > 0) {
       return PdfJsUtils.getVisibleElements(this.getRootElement()[0], this.loadedPages, true);
     }
@@ -712,36 +735,33 @@ export class PdfJsViewer {
         isResize: true,
         url: this.lastTask.url,
         isNewFile: true,
-        complete: function() {}
+        complete: function () {
+        }
       });
     }
   }
 
+  // Scroll triggers this function, when is moved.
   scrollUpdate() {
     const visible = this.getCurrentVisiblePages();
-    if(visible){
+    if (visible) {
       this.currentPage = visible.first.id;
       for (const page of visible.views) {
-        const pageNumber = page.view.id;
-        this.renderPage(pageNumber);
+        this.renderPage(page.view);
       }
 
-      //Trying to render next or prev page
+      // Trying to render next or prev page
       if (this.scroll.down) {
-        let nextPageIndex = visible.last.id;
-        // ID's start at 1 so no need to add 1.
-        if (this.loadedPages[nextPageIndex] &&
-          this.loadedPages[nextPageIndex].renderingState !== RenderingStates.FINISHED) {
-          this.renderPage(nextPageIndex);
+        let nextPage = this.findPageView(visible.last.id + 1);
+        if (nextPage) {
+          this.renderPage(nextPage);
         }
       } else {
-        let previousPageIndex = visible.first.id - 2;
-        if (this.loadedPages[previousPageIndex] &&
-          this.loadedPages[previousPageIndex].renderingState !== RenderingStates.FINISHED) {
-          this.renderPage(previousPageIndex);
+        let previousPage = this.findPageView(visible.first.id - 1);
+        if (previousPage) {
+          this.renderPage(previousPage);
         }
       }
-
     }
   }
 
