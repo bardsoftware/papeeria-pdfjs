@@ -55,7 +55,7 @@ interface VisiblePageStatic {
 // user's current visible pages.
 interface VisiblePagesStatic {
   // Array of visible pages. By default, it's sorted by visibility.
-  views: Array<VisiblePageStatic>;
+  views: List<VisiblePageStatic>;
   // The most and least visible pages.
   first: VisiblePageStatic;
   last: VisiblePageStatic;
@@ -119,7 +119,7 @@ enum RenderingStates {
   RUNNING = 1,
   PAUSED = 2,
   FINISHED = 3
-};
+}
 
 // This class is responsible for storing current value of zoom factor and recalculating it
 // in response to user actions.
@@ -235,25 +235,6 @@ class Zoom {
       this.mode = ZoomingMode.PRESET;
     }
   }
-}
-
-interface PageTask {
-  // URL of the PDF document
-  url: string;
-  // Page which should be displayed
-  page: number;
-  // Timestamp in milliseconds when the file was last modified
-  modificationTs: number;
-  // Calculated flag which indicates whether we're showing the contents of absolutely new file
-  // TODO: we probably need to remove it
-  isNewFile: boolean;
-  // Flag indicating if container size has changed
-  isResize: boolean;
-  // Identifier of the shown PDF file
-  mainFileId?: string;
-
-  // Function which is called on task completion
-  complete(): void;
 }
 
 export interface DocumentTask {
@@ -419,7 +400,7 @@ const DEFAULT_DATA_SOURCE = (url: string) => $.Deferred<string>().resolve(url);
 
 export class PdfJsViewer {
   // These are from pdfjs library
-  loadedPages: Array<PDFPageViewStatic> = [];
+  loadedPages: MutableList<PDFPageViewStatic> = [];
   currentFile?: PDF.PDFDocumentProxy;
   currentFileUrl?: string;
   currentPage: number = 1;
@@ -700,10 +681,8 @@ export class PdfJsViewer {
     if (!this.currentFile) {
       return undefined;
     }
-    if (pageNumber > this.currentFile.numPages) {
-      pageNumber = this.currentFile.numPages;
-    }
-    return this.loadedPages.filter(x => x.id === pageNumber)[0];
+    const boundPnum = Math.min(pageNumber, this.currentFile.numPages);
+    return this.loadedPages.filter(x => x.id === boundPnum)[0];
   }
 
   private resetPage() {
@@ -752,12 +731,12 @@ export class PdfJsViewer {
 
       // Trying to render next or prev page
       if (this.scroll.down) {
-        let nextPage = this.findPageView(visible.last.id + 1);
+        const nextPage = this.findPageView(visible.last.id + 1);
         if (nextPage) {
           this.renderPage(nextPage);
         }
       } else {
-        let previousPage = this.findPageView(visible.first.id - 1);
+        const previousPage = this.findPageView(visible.first.id - 1);
         if (previousPage) {
           this.renderPage(previousPage);
         }
@@ -790,25 +769,27 @@ export class PdfJsViewer {
   // Toolbar button handlers
   zoomIn = () => {
     if (this.lastTask) {
-      this.zoom.zoomIn() && this.onResize();
+      this.zoom.zoomIn();
+      this.onResize();
     }
-  };
+  }
 
   zoomOut = () => {
     if (this.lastTask) {
-      this.zoom.zoomOut() && this.onResize();
+      this.zoom.zoomOut();
+      this.onResize();
     }
-  };
+  }
 
   zoomWidth = () => {
     this.zoom.setFitting(ZoomingMode.FIT_WIDTH);
     this.onResize();
-  };
+  }
 
   zoomPage = () => {
     this.zoom.setFitting(ZoomingMode.FIT_PAGE);
     this.onResize();
-  };
+  }
 
   zoomPreset(scale: number) {
     this.zoom.setPreset(scale);
