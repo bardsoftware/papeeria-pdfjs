@@ -207,7 +207,7 @@ var PDFPageView = (function PDFPageViewClosure() {
         }
       }
 
-      if (this.canvas) {
+      if (this.canvas && this.canvas.parentNode) {
         if (pdfjsLib.PDFJS.useOnlyCssZoom ||
             (this.hasRestrictedScaling && isScalingRestricted)) {
           this.cssTransform(this.canvas, true);
@@ -223,7 +223,7 @@ var PDFPageView = (function PDFPageViewClosure() {
           this.zoomLayer = this.canvas.parentNode;
         }
       }
-      if (this.zoomLayer) {
+      if (this.zoomLayer && this.zoomLayer.firstChild) {
         this.cssTransform(this.zoomLayer.firstChild);
       }
       this.reset(/* keepZoomLayer = */ true, /* keepAnnotations = */ true);
