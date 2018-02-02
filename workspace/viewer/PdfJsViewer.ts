@@ -1,75 +1,48 @@
 // Copyright (C) 2017 BarD Software s.r.o
 // Author: Dmitry Barashev (dbarashev@bardsoftware.com)
 /// <amd-dependency path="pdf.combined" name="PdfJsModule"/>
-/// <amd-dependency path="pdfjs-web/pdf_page_view" name="PDFPageView"/>
-/// <amd-dependency path="pdfjs-web/text_layer_builder" name="TextLayerBuilder"/>
 /// <amd-dependency path="pdfjs-web/ui_utils" name="PdfJsUtils"/>
 /// <reference path="../../papeeria-global.d.ts"/>
+import {PdfJsApi, PdfJsDocument, PdfJsPage, PDFPageView, RenderingState} from "./PdfJsApi";
+import {
+  ASYNC_PULL_STRATEGY, DocumentTask, Loader, PageViewAppender, Queue,
+  QueuePullStrategy
+} from "./PdfJsDocumentLoader";
 
 declare const PdfJsModule: any;
-declare const PDFPageView, TextLayerBuilder, PdfJsUtils: any;
-const pdfjs: PDF.PDFJSStatic = PdfJsModule;
+declare const PdfJsUtils: any;
+const pdfjs: PdfJsApi = PdfJsModule;
 
-// View, representing PDF page of the document.
-interface PDFPageViewStatic {
-  id: number;
-  // Page's div wrapper.
-  div: HTMLElement;
-  // Actual view's PDF page.
-  pdfPage: PDF.PDFPageProxy;
-  // Indicates status of rendering.
-  renderingState: RenderingStates;
-
-  new(options: any): PDFPageViewStatic;
-
-  destroy(): void;
-
-  // Sets needed PDF page to the view.
-  setPdfPage(pdfPage: PDF.PDFPageProxy): void;
-
-  // Draws page's canvas and text layers.
-  draw(): any;
-
-  // Transforms page view into needed scale and rotation.
-  update(scale: number, rotation?: number): void;
-
-  // Updates text layers' position.
-  updatePosition(): void;
-
-  // Continues rendering, e.g., after it was paused.
-  resume(): void;
-}
-
-// View of visible page.
-interface VisiblePageStatic {
+// Properties of a visible page.
+// This is a formal type definition of the structure returned from
+// ui_utils.js::getVisibleElements
+interface PagePosition {
   id: number;
   // Percentage of visibility.
   percent: number;
-  view: PDFPageViewStatic;
+  view: PDFPageView;
   // Position relatively to other pages.
   x: number;
   y: number;
 }
 
-// Return type of getCurrentVisiblePages() function, which represents
-// user's current visible pages.
-interface VisiblePagesStatic {
-  // Array of visible pages. By default, it's sorted by visibility.
-  views: List<VisiblePageStatic>;
-  // The most and least visible pages.
-  first: VisiblePageStatic;
-  last: VisiblePageStatic;
+// A range of pages currently visible in the viewport.
+interface VisiblePagesRange {
+  // Array of visible pages. By default, it's sorted by page number.
+  views: List<PagePosition>;
+  // The first and the last pages in the range.
+  first: PagePosition;
+  last: PagePosition;
 }
 
-// It's created for monitoring the scroll event.
+// Scroll position and direction.
+// This is a formal type definition of the structure returned from
+// ui_utils.js::watchScroll
 interface Scroll {
   // This flag shows scroll's direction. Indicates true if last movement was down.
-  down: boolean;
-  // Displays position, where scrolling has been stopped.
+  down?: boolean;
+  // Scroll offset in the scrollable viewport.
   lastY: number;
-
-  // Triggers this function, when scroll event is happened.
-  _eventHandler(): void;
 }
 
 // Interfaces for communication with other components
@@ -114,20 +87,13 @@ enum ZoomingMode {
   FIT_PAGE
 }
 
-enum RenderingStates {
-  INITIAL = 0,
-  RUNNING = 1,
-  PAUSED = 2,
-  FINISHED = 3
-}
-
 // This class is responsible for storing current value of zoom factor and recalculating it
 // in response to user actions.
 class Zoom {
   // Preset zoom scales from 25% to 400%
   static readonly ZOOM_FACTORS = [0.25, 0.33, 0.5, 0.66, 0.75, 0.9, 1.0, 1.25, 1.5, 2.0, 4.0];
   // scaling mode, one of the constants listed above
-  private mode?: ZoomingMode = undefined;
+  private mode: ZoomingMode = ZoomingMode.FIT_PAGE;
   // Index of one of the preset scales. Used when mode is PRESET
   private idxPresetScale = 0;
   // Dynamically calculated scale which is used when mode is FIT*
@@ -142,7 +108,7 @@ class Zoom {
 
   // Returns currently set zoom factor if preset mode is used or recalculates
   // zoom factor depending on the fitting mode and page/container size.
-  factor(page: any, container: JQuery): number {
+  factor(page: PdfJsPage, container: JQuery): number {
     let value: number;
     if (this.mode === ZoomingMode.PRESET) {
       value = Zoom.ZOOM_FACTORS[this.idxPresetScale];
@@ -235,104 +201,12 @@ class Zoom {
       this.mode = ZoomingMode.PRESET;
     }
   }
-}
 
-export interface DocumentTask {
-  readonly url: string;
-  readonly modificationTs: number;
-  readonly isResize: boolean;
-  readonly targetId: string;
-  totalPages?: number;
-
-  complete(): void;
-}
-
-type QueuePullStrategy = Consumer<Callable>;
-const ASYNC_PULL_STRATEGY = fxnPull => window.setTimeout(fxnPull, 0);
-export const SYNC_PULL_STRATEGY = fxnPull => fxnPull();
-// This is a queue of document rendering requests.
-// Normally it consists of just a single task which is immediately executed,
-// however, sometimes two or three tasks may be enqueued. Tasks come from:
-// * compile events from the channel
-// * resize events from the layout
-// * and scrolling events from the viewer itself.
-export class Queue {
-  // We keep a reference to the last completed task to be able to skip tasks which need no re-rendering
-  lastCompleted?: DocumentTask;
-
-  // task queue
-  private tasks: MutableList<DocumentTask> = [];
-
-  constructor(private readonly consumer: Consumer<DocumentTask>,
-              private readonly pullStrategy: QueuePullStrategy = ASYNC_PULL_STRATEGY) {}
-
-  // Pushes a new document rendering task.
-  // If the last task has the same url, page and isResize flag then new task is ignored.
-  // In case when queue is empty, the last task is the last completed one.
-  // Task is removed from the queue when it completes.
-  // Calling complete() is a must, no matter if task was successful or not.
-  push(newTask: DocumentTask) {
-    if (newTask.isResize) {
-      if (!this.isEmpty()) {
-        const lastTask = this.tasks[this.tasks.length - 1];
-        if (lastTask.isResize
-            && lastTask.url === newTask.url
-            && lastTask.modificationTs === newTask.modificationTs) {
-          return;
-        }
-      }
-    } else {
-      const lastTask = this.isEmpty() ? this.lastCompleted : this.tasks[this.tasks.length - 1];
-      if (lastTask && lastTask.url === newTask.url && lastTask.modificationTs === newTask.modificationTs) {
-        return;
-      }
-    }
-    const task: DocumentTask = {
-      url: newTask.url,
-      isResize: newTask.isResize,
-      targetId: newTask.targetId,
-      modificationTs: newTask.modificationTs,
-      complete: () => {
-        newTask.complete();
-        this.tasks.shift();
-        this.lastCompleted = task;
-        this.pull();
-      }
-    };
-    this.tasks.push(task);
-    if (this.tasks.length === 1) {
-      this.pull();
-    }
-  }
-
-  pull() {
-    this.pullStrategy(this.doPull);
-  }
-
-  doPull = () => {
-    if (this.isEmpty()) {
-      return;
-    }
-    const task = this.tasks[0];
-    if (task == undefined) {
-      throw new Error("Task queue is expected to be non-empty in pull()");
-    }
-    this.consumer(task);
-  }
-
-  isEmpty(): boolean {
-    return this.tasks.length === 0;
-  }
-
-  clear() {
-    this.lastCompleted = undefined;
-    this.tasks = [];
-  }
-
-  getLastCompleted(): DocumentTask | undefined {
-    return this.lastCompleted;
+  getMode(): ZoomingMode {
+    return this.mode;
   }
 }
+
 
 const THRESHOLD_INITIAL = 0.25;
 const THRESHOLD_FACTOR = 2;
@@ -420,14 +294,71 @@ export class CachingDataSource {
 
 const DEFAULT_DATA_SOURCE = (url: string) => $.Deferred<string>().resolve(url);
 
+export interface PageMapValue {
+  id: number;
+}
+
+// Provides map interface with values going in the key sort order, similar to SortedMap in Java.
+export class PageMap<T extends PageMapValue> {
+  private id2page: {
+    [key: number]: T;
+  } = {};
+  private length: number = 0;
+
+  put(page: T) {
+    if (!this.id2page[page.id]) {
+      this.length++;
+    }
+    this.id2page[page.id] = page;
+  }
+
+  get(id: number): T | undefined {
+    return this.id2page[id];
+  }
+
+  values(): List<T> {
+    if (Object.values) {
+      // As claimed in the docs [1] if keys are numeric then values are returned in keys sort order
+      // [1] https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_objects/Object/values
+      return Object.values(this.id2page);
+    }
+    // This should be the case for IE.
+    const keys = Object.keys(this.id2page).sort();
+    const values: MutableList<T> = [];
+    keys.map(key => values.push(this.id2page[key]));
+    return values;
+  }
+
+  clear() {
+    this.id2page = {};
+    this.length = 0;
+  }
+
+  size() {
+    return this.length;
+  }
+}
+
+export type ScrollType = "PAGE" | "OFFSET";
+
+export class PageDimensions {
+  constructor(readonly width: number, readonly height: number, readonly zoomFactor: number) {}
+  equals(that: PageDimensions): boolean {
+    if (this.zoomFactor === that.zoomFactor && this.zoomFactor > 0) {
+      return true;
+    }
+    if (this.zoomFactor === that.zoomFactor) {
+      return this.height === that.height && this.width === that.width;
+    }
+    return false;
+  }
+}
+
 export class PdfJsViewer {
-  // These are from pdfjs library
-  loadedPages: MutableList<PDFPageViewStatic> = [];
-  // currentFile?: PDF.PDFDocumentProxy;
-  // currentFileUrl?: string;
+  loadedPages: PageMap<PDFPageView> = new PageMap();
   currentPage: number = 1;
-  currentTask: DocumentTask | undefined;
-  scroll: Scroll = PdfJsUtils.watchScroll(this.getRootElement()[0], () => this.scrollUpdate());
+  currentScroll: Scroll;
+
   // Some magic to handle weird touchpad events which send delta exceeding the threshold a few times in a row.
   // Dynamic threshold basically cuts some scrolling events depending on the scroll delta value.
   // Effective threshold will grow and shrink by THRESHOLD_FACTOR as it is hit,
@@ -436,18 +367,10 @@ export class PdfJsViewer {
   private readonly zoom = new Zoom();
   private readonly queue;
   private readonly pageReady = new CallbacksList();
-  private readonly textLayerFactory = {
-    createTextLayerBuilder: function (div: any, page: any, viewport: any) {
-      return new TextLayerBuilder.TextLayerBuilder({
-        textLayerDiv: div,
-        pageIndex: page,
-        viewport: viewport
-      });
-    }
-  };
   // Flag indicating if we're in the process of page rendering.
   // We ignore some events when flag is on.
   private isRendering = false;
+  private readonly pageViewAppender: PageViewAppender;
 
   constructor(private readonly jqRoot: JQuery,
               private readonly alert: Alert,
@@ -456,6 +379,7 @@ export class PdfJsViewer {
               private readonly i18n: I18N,
               private readonly dataSource: DataSource = DEFAULT_DATA_SOURCE,
               readonly queuePullStrategy: QueuePullStrategy = ASYNC_PULL_STRATEGY) {
+    this.currentScroll = PdfJsUtils.watchScroll(this.getRootElement()[0], this.scrollUpdate);
     this.queue = new Queue(task => this.processTask(task), queuePullStrategy);
     this.zoom.setFitting(ZoomingMode.FIT_PAGE);
     jqRoot.unbind("wheel.pdfjs").bind("wheel.pdfjs", e => {
@@ -467,6 +391,7 @@ export class PdfJsViewer {
         this.processEvent(e, this.zoomIn, this.zoomOut);
       }
     });
+    this.pageViewAppender = new PageViewAppender(jqRoot);
   }
 
   static getPresetScales(): List<number> {
@@ -502,9 +427,25 @@ export class PdfJsViewer {
     return this.jqRoot.find("canvas").length > 0;
   }
 
+  private getDimensions(): PageDimensions {
+    const root = this.getRootElement();
+    const zoomFactor = () => {
+      switch (this.zoom.getMode()) {
+        case ZoomingMode.FIT_PAGE:
+          return -1;
+        case ZoomingMode.FIT_WIDTH:
+          return -2;
+        case ZoomingMode.PRESET:
+          return this.zoom.current();
+      }
+    };
+    return new PageDimensions(root.width(), root.height(), zoomFactor());
+  }
+
   // Schedules a new page open task. If queue is empty, the task is executed immediately, otherwise it is
   // added to the queue and waits until the current task completes.
   public showAll(documentTask: DocumentTask) {
+    documentTask.pageDimensions = this.getDimensions();
     this.queue.push(documentTask);
   }
 
@@ -512,118 +453,58 @@ export class PdfJsViewer {
   // shows error message if defined. Thus, should any step of task processing fail, we'll show error unless
   // we have more tasks.
   private processTask(task: DocumentTask) {
-    this.dataSource(task.url)
-      .then(document => {
-        if (document) {
-          this.currentTask = task;
-          this.loadDocument(task, document);
-        }
-      })
-      .fail(_ => {
-        task.complete();
-      });
-  }
-
-  private loadDocument(task: DocumentTask, document: Uint8Array | string) {
-    const onAllPagesAlways = () => {
-      task.complete();
-      this.stopRendering();
-      this.currentTask = undefined;
-    };
-    const onAllPagesFailure = error => {
-      onAllPagesAlways();
-      if (error) {
-        this.alert.show(error);
-      }
-      this.logger.error(`Failed to render document, got error:${error}`);
-    };
-
-    const onDocumentSuccess = pdf => {
+    const onDocumentSuccess = (pdf: PdfJsDocument) => {
       if (this.currentPage > pdf.numPages) {
         this.currentPage = pdf.numPages;
       }
 
-      if (task.isResize) {
-        this.zoom.onResize();
-      } else {
+      if (task.pageDimensionsChanged) {
         this.resetCanvas();
       }
-      let waiting = pdf.numPages;
-      for (let i = 1; i <= pdf.numPages; i++) {
-        const promise = this.openPage(pdf, i);
-        promise.then(() => {
-          if (waiting > 0) {
-            this.positionCanvas(i);
-            waiting--;
-            if (waiting === 0) {
-              this.scrollUpdate();
-              onAllPagesAlways();
-            }
-          }
-        }, error => {
-          onAllPagesFailure(error);
-          waiting = -1;
-        });
-      }
-      task.totalPages = pdf.numPages;
     };
-
     const onDocumentFailure = (error: string) => {
-      this.logger.error(`Failed to fetch url=${task.url}, got error:${error}`);
-      onAllPagesFailure(this.i18n.text("js.pdfjs.failure.document", error));
+      if (error) {
+        this.logger.error(`Failed to render document, got error:${error}`);
+        this.alert.show(this.i18n.text("js.pdfjs.failure.document", error));
+      }
     };
-    this.startRendering();
-    if (typeof document === "string") {
-      pdfjs.getDocument(document as string).then(onDocumentSuccess, onDocumentFailure);
-    } else {
-      pdfjs.getDocument(document as Uint8Array).then(onDocumentSuccess, onDocumentFailure);
-    }
-  }
+    const self = this;
+    const viewerApi = {
+      alertError: self.alert.show,
+      logError: self.logger.error,
+      stopRendering: () => self.stopRendering(),
+      startRendering: () => self.startRendering(),
+      getZoomFactor: (page: PdfJsPage) => {
+        return self.zoom.factor(page, self.jqRoot);
+      },
+      getPageView: (pageNum: number) => self.findPageView(pageNum),
+      putPageView: (pageView: PDFPageView) => self.loadedPages.put(pageView)
+    };
 
-  private openPage(pdfFile: any, pageNumber: number): PDF.PDFPromise<PDF.PDFPageProxy> {
-    const onPageSuccess = (page: any) => {
-      if (!this.currentTask) {
-        return false;
-      }
-      if (this.currentTask.isResize) {
-        this.resetPage();
-      }
-      const scale = this.zoom.factor(page, this.jqRoot);
-      let pageView;
-      if (this.currentTask.isResize) {
-        pageView = this.findPageView(pageNumber);
-      } else {
-        pageView = new PDFPageView.PDFPageView({
-          container: this.jqRoot.get(0),
-          id: pageNumber,
-          scale: scale,
-          defaultViewport: page.getViewport(1),
-          textLayerFactory: this.textLayerFactory
+    const loader = new Loader(pdfjs, viewerApi, this.pageViewAppender, task);
+    this.dataSource(task.url)
+        .then(document => {
+          if (document) {
+            this.logger.error(`Loading ${task.url}`);
+            loader.loadDocument(document).then(onDocumentSuccess, onDocumentFailure);
+          }
+        })
+        .fail(() => {
+          task.complete();
         });
-        this.loadedPages.push(pageView);
-        pageView.setPdfPage(page);
-      }
-      pageView.update(scale);
-    };
-    const onPageFailure = (error: string) => {
-      this.logger.error(`Failed to fetch page ${pageNumber} from url=${pdfFile.url}, got error:${error}`);
-    };
-    const result = pdfFile.getPage(pageNumber);
-    result.then(onPageSuccess, onPageFailure);
-    return result;
   }
 
-  private renderPage(pageView: PDFPageViewStatic): void {
+  private renderPage(pageView: PDFPageView): void {
     const state = pageView.renderingState;
     switch (state) {
-      case RenderingStates.FINISHED:
+      case RenderingState.FINISHED:
         break;
-      case RenderingStates.PAUSED:
+      case RenderingState.PAUSED:
         pageView.resume();
         break;
-      case RenderingStates.RUNNING:
+      case RenderingState.RUNNING:
         break;
-      case RenderingStates.INITIAL:
+      case RenderingState.INITIAL:
         const onDrawSuccess = () => {
           this.positionCanvas(pageView.id);
           this.pageReady.invoke();
@@ -631,9 +512,8 @@ export class PdfJsViewer {
         };
         const onDrawFailure = (error: string) => {
           this.stopRendering();
-          this.logger.error(`Failed to render page ${pageView.id}, got error:${error}`);
-          if (this.currentTask) {
-            this.logger.error(`... when processing ${this.currentTask.url}`);
+          if (error !== "cancelled") {
+            this.logger.error(`Failed to render page ${pageView.id}, got error:${error}`);
           }
         };
         pageView.draw().then(onDrawSuccess, onDrawFailure);
@@ -643,69 +523,78 @@ export class PdfJsViewer {
 
   private positionCanvas(pageNumber: number) {
     const parent = $(`#pageContainer${pageNumber}`, this.jqRoot);
+    const parentWidth = parent.innerWidth();
+    if (parentWidth < this.jqRoot.width()) {
+      // If page container fits into the scrollable viewport horizontally then we
+      // set its width to 100% so that canvasWrapper was centered.
+      // However, if page container (that is, canvasWrapper and canvas) is wider than
+      // scrollable area then we have a horizontal scroll and we should leave its width as is, because
+      // otherwise 100% == visible viewport width and something is skewed, \
+      // either canvas or text layer.
+      parent.css("width", "100%");
+    }
     const canvas = parent.find(".canvasWrapper");
+    if (canvas.length === 0) {
+      this.logger.error(`Page ${pageNumber} can't be positioned because it doesn't exist. 
+          We have only ${$(".page").length} pages`);
+      return;
+    }
 
+    if (parentWidth < this.jqRoot.width()) {
+      canvas.css("width", `${parentWidth}px`);
+    } else {
+      canvas.css("width", "100%");
+    }
     canvas.removeClass("hide");
-    if (canvas.width() < this.jqRoot.width()) {
-      canvas.css("left", `${(this.jqRoot.width()) / 2 - (canvas.width() / 2)}px`);
-    } else {
-      canvas.css("left", "0px");
-    }
-    if (canvas.height() < parent.height()) {
-      canvas.css("top", `${(parent.height()) / 2 - (canvas.height() / 2)}px`);
-    } else {
-      canvas.css("top", "0px");
-    }
-    if (canvas.width() < this.jqRoot.width() && canvas.height() < this.jqRoot.height()) {
+    if (parentWidth < this.jqRoot.width() && canvas.height() < this.jqRoot.height()) {
       canvas.addClass("shadow");
     } else {
       canvas.removeClass("shadow");
     }
-    const canvasOffset = canvas.position();
+    // Here we move text layer so that it was a child of canvasWrapper rather than its sibling.
+    // This way it will be aligned with canvas.
     const textLayer = parent.find(".textLayer");
-    textLayer.css({
-      top: canvasOffset.top,
-      left: canvasOffset.left
-    });
+    textLayer.remove().appendTo(canvas);
+  }
+
+  public restoreScroll(type: ScrollType) {
+    if (type === "PAGE") {
+      this.showPage(this.currentPage);
+    } else {
+      this.getRootElement().scrollTop(this.currentScroll.lastY);
+    }
+    this.scrollUpdate(this.currentScroll);
   }
 
   public resetCanvas() {
-    for (const page of this.loadedPages) {
+    for (const page of this.loadedPages.values()) {
       page.destroy();
     }
-    this.loadedPages = [];
+    this.loadedPages.clear();
     this.jqRoot.empty();
     this.queue.clear();
   }
 
   private showPage(pageNumber: number) {
-    if (!this.queue.getLastCompleted()) {
-      return;
-    }
     const pageView = this.findPageView(pageNumber);
     if (pageView) {
       pageView.div.scrollIntoView();
+      this.currentScroll = {lastY: this.getRootElement().scrollTop()};
     }
   }
 
-  private findPageView(pageNumber: number): PDFPageViewStatic | undefined {
+  private findPageView(pageNumber: number): PDFPageView | undefined {
     const lastTask = this.queue.getLastCompleted();
     if (!lastTask) {
       return undefined;
     }
     const boundPnum = Math.min(pageNumber, lastTask.totalPages || 1);
-    return this.loadedPages.filter(x => x.id === boundPnum)[0];
+    return this.loadedPages.get(boundPnum);
   }
 
-  private resetPage() {
-    if (this.currentPage !== undefined) {
-      this.zoom.onResize();
-    }
-  }
-
-  private getCurrentVisiblePages(): VisiblePagesStatic | undefined {
-    if (this.loadedPages.length > 0) {
-      return PdfJsUtils.getVisibleElements(this.getRootElement()[0], this.loadedPages, true);
+  private getCurrentVisiblePages(): VisiblePagesRange | undefined {
+    if (this.loadedPages.size() > 0) {
+      return PdfJsUtils.getVisibleElements(this.getRootElement()[0], this.loadedPages.values(), false);
     }
     return undefined;
   }
@@ -719,14 +608,16 @@ export class PdfJsViewer {
   }
 
   onResize() {
+    this.zoom.onResize();
     const lastTask = this.queue.getLastCompleted();
     if (lastTask) {
+      const viewer = this;
       this.showAll({
         targetId: lastTask.targetId,
         modificationTs: lastTask.modificationTs,
-        isResize: true,
         url: lastTask.url,
         complete: function () {
+          viewer.restoreScroll("PAGE");
         }
       });
     }
@@ -736,38 +627,31 @@ export class PdfJsViewer {
     const lastTask = this.queue.getLastCompleted();
     if (lastTask) {
       this.queue.clear();
+      const viewer = this;
       this.showAll({
         targetId: lastTask.targetId,
         modificationTs: lastTask.modificationTs,
-        isResize: false,
         url: lastTask.url,
         complete: function () {
+          viewer.restoreScroll("PAGE");
         }
       });
     }
   }
 
   // Scroll triggers this function, when is moved.
-  scrollUpdate() {
+  scrollUpdate = (state: Scroll) => {
     const visible = this.getCurrentVisiblePages();
     if (visible) {
-      this.currentPage = visible.first.id;
+      let firstNearlyVisible = -1;
       for (const page of visible.views) {
+        if (page.percent > 75 && firstNearlyVisible === -1) {
+          firstNearlyVisible = page.id;
+        }
         this.renderPage(page.view);
       }
-
-      // Trying to render next or prev page
-      if (this.scroll.down) {
-        const nextPage = this.findPageView(visible.last.id + 1);
-        if (nextPage) {
-          this.renderPage(nextPage);
-        }
-      } else {
-        const previousPage = this.findPageView(visible.first.id - 1);
-        if (previousPage) {
-          this.renderPage(previousPage);
-        }
-      }
+      this.currentPage = firstNearlyVisible === -1 ? this.currentPage : firstNearlyVisible;
+      this.currentScroll = state;
     }
   }
 

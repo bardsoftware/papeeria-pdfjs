@@ -12,3 +12,7 @@ type Consumer<T> = (arg: T) => void;
 
 type Callable = () => void;
 
+interface Object {
+  values?(obj: object): [any];
+}
+
